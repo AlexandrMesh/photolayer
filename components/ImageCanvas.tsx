@@ -39,6 +39,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
     const containerWidth = useSharedValue(0);
     const containerHeight = useSharedValue(0);
     const baseBoundsShared = useSharedValue({ x: 0, y: 0, width: 0, height: 0 });
+    const baseImageSizeShared = useSharedValue({ width: 0, height: 0 });
     const overlayPanStartX = useSharedValue(0);
     const overlayPanStartY = useSharedValue(0);
     const overlayContainerSize = useSharedValue({ width: 0, height: 0 });
@@ -99,18 +100,22 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
     useEffect(() => {
       if (!baseImageUri) {
         setBaseImageSize({ width: 0, height: 0 });
+        baseImageSizeShared.value = { width: 0, height: 0 };
         return;
       }
       Image.getSize(
         baseImageUri,
         (width, height) => {
-          setBaseImageSize({ width, height });
+          const size = { width, height };
+          setBaseImageSize(size);
+          baseImageSizeShared.value = size;
         },
         () => {
           setBaseImageSize({ width: 0, height: 0 });
+          baseImageSizeShared.value = { width: 0, height: 0 };
         },
       );
-    }, [baseImageUri]);
+    }, [baseImageUri, baseImageSizeShared]);
 
     useEffect(() => {
       if (!overlayImageUri) {
@@ -313,9 +318,38 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
       const currentScale = overlayScale.value;
       const width = overlaySize.width * currentScale;
       const height = overlaySize.height * currentScale;
-      // Координаты относительно ViewShot (который начинается с baseBounds.x, baseBounds.y)
       const left = bounds.width / 2 - width / 2 + overlayTranslateX.value;
       const top = bounds.height / 2 - height / 2 + overlayTranslateY.value;
+
+      return {
+        position: 'absolute',
+        left,
+        top,
+        width,
+        height,
+        transform: [{ rotate: `${overlayRotation.value}deg` }],
+      };
+    });
+
+    const overlayFullResStyle = useAnimatedStyle(() => {
+      const bounds = baseBoundsShared.value;
+      const overlaySize = overlayContainerSize.value;
+      const baseSize = baseImageSizeShared.value;
+      const currentScale = overlayScale.value;
+      if (!bounds.width || !bounds.height || !baseSize.width || !baseSize.height) {
+        return {
+          position: 'absolute',
+          width: 0,
+          height: 0,
+        };
+      }
+
+      const scaleX = baseSize.width / bounds.width;
+      const scaleY = baseSize.height / bounds.height;
+      const width = overlaySize.width * currentScale * scaleX;
+      const height = overlaySize.height * currentScale * scaleY;
+      const left = baseSize.width / 2 - width / 2 + overlayTranslateX.value * scaleX;
+      const top = baseSize.height / 2 - height / 2 + overlayTranslateY.value * scaleY;
 
       return {
         position: 'absolute',
@@ -336,53 +370,70 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
       <View style={{ width: '100%', height: '100%', position: 'relative' }} onLayout={handleLayout}>
         <GestureDetector gesture={containerGesture}>
           <Animated.View style={[{ width: '100%', height: '100%' }, cameraStyle]}>
+            <View style={{ width: '100%', height: '100%' }} onLayout={handleBaseImageLayout}>
+              <Image source={{ uri: baseImageUri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
+            </View>
+
+            {overlayImageUri && overlayMaxBoundsReady && (
+              <GestureDetector gesture={overlayGesture}>
+                <Animated.View style={[overlayAnimatedStyle]}>
+                  <Image source={{ uri: overlayImageUri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
+                  {isOverlayActive && (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        borderWidth: 2,
+                        borderColor: '#007AFF',
+                        borderRadius: 4,
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  )}
+                </Animated.View>
+              </GestureDetector>
+            )}
+          </Animated.View>
+        </GestureDetector>
+
+        {baseImageSize.width > 0 && baseImageSize.height > 0 && (
+          <View
+            style={{
+              position: 'absolute',
+              left: -100000,
+              top: -100000,
+              opacity: 0,
+              pointerEvents: 'none',
+              width: baseImageSize.width,
+              height: baseImageSize.height,
+            }}
+          >
             <ViewShot
               ref={captureViewShotRef}
               options={{
                 format: 'png',
                 quality: 1,
-                width: baseBounds.width > 0 ? Math.round(baseBounds.width) : undefined,
-                height: baseBounds.height > 0 ? Math.round(baseBounds.height) : undefined,
+                result: 'tmpfile',
+                width: Math.round(baseImageSize.width),
+                height: Math.round(baseImageSize.height),
               }}
               collapsable={false}
-              style={{
-                position: 'absolute',
-                left: baseBounds.x,
-                top: baseBounds.y,
-                width: baseBounds.width > 0 ? baseBounds.width : '100%',
-                height: baseBounds.height > 0 ? baseBounds.height : '100%',
-                overflow: 'hidden',
-              }}
+              style={{ width: baseImageSize.width, height: baseImageSize.height }}
             >
-              <View style={{ width: '100%', height: '100%' }} onLayout={handleBaseImageLayout}>
-                <Image source={{ uri: baseImageUri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
-              </View>
-
-              {overlayImageUri && overlayMaxBoundsReady && (
-                <GestureDetector gesture={overlayGesture}>
-                  <Animated.View style={[overlayAnimatedStyle]}>
+              <View style={{ width: baseImageSize.width, height: baseImageSize.height }}>
+                <Image source={{ uri: baseImageUri }} style={{ width: baseImageSize.width, height: baseImageSize.height }} resizeMode='contain' />
+                {overlayImageUri && overlayDisplaySize.width > 0 && (
+                  <Animated.View style={[overlayFullResStyle]}>
                     <Image source={{ uri: overlayImageUri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
-                    {isOverlayActive && (
-                      <View
-                        style={{
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          borderWidth: 2,
-                          borderColor: '#007AFF',
-                          borderRadius: 4,
-                          pointerEvents: 'none',
-                        }}
-                      />
-                    )}
                   </Animated.View>
-                </GestureDetector>
-              )}
+                )}
+              </View>
             </ViewShot>
-          </Animated.View>
-        </GestureDetector>
+          </View>
+        )}
 
           <View
             style={{
