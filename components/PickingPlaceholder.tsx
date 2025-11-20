@@ -42,7 +42,7 @@ const PickingPlaceholder = ({ picking, onPick }: Props) => {
       >
         <Text style={{ color: 'white', fontSize: 40 }}>＋</Text>
       </View>
-      <Text style={{ color: theme.textSecondary, fontSize: 16 }}>{t('selectImage')}</Text>
+      <Text style={{ color: theme.textSecondary, fontSize: 16 }}>{t('selectBaseImage')}</Text>
     </Pressable>
   );
 };

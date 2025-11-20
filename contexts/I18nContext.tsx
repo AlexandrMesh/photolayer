@@ -10,6 +10,16 @@ type Language = 'ru' | 'en' | 'auto';
 
 type Translations = {
   appName: string;
+  basePhoto: string;
+  addBasePhoto: string;
+  replaceBasePhoto: string;
+  addOverlay: string;
+  replaceOverlay: string;
+  removeOverlay: string;
+  resetOverlay: string;
+  overlay: string;
+  overlayHint: string;
+  selectBaseImage: string;
   rotation: string;
   reset: string;
   loading: string;

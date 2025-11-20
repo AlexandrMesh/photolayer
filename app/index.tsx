@@ -1,17 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { View } from 'react-native';
 
-import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
+import ViewShot from 'react-native-view-shot';
 
 import ControlsPanel from '../components/ControlsPanel';
 import Header from '../components/Header';
-import ImageCanvas, { ImageCanvasHandle } from '../components/ImageCanvas';
+import ImageCanvas, { ImageCanvasHandle, type OverlayTransform } from '../components/ImageCanvas';
 import PickingPlaceholder from '../components/PickingPlaceholder';
 import ReviewPrompt from '../components/ReviewPrompt';
 import { useI18n } from '../contexts/I18nContext';
@@ -19,12 +19,13 @@ import { useTheme } from '../contexts/ThemeContext';
 import { checkAndMaybeUpdate } from '../utils/inAppUpdate';
 
 const Index = () => {
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [angle, setAngle] = useState<number>(0);
-  const [angleInput, setAngleInput] = useState<string>('0');
+  const [baseImageUri, setBaseImageUri] = useState<string | null>(null);
+  const [overlayImageUri, setOverlayImageUri] = useState<string | null>(null);
+  const [overlayTransform, setOverlayTransform] = useState<OverlayTransform>({ x: 0, y: 0, scale: 1, rotation: 0 });
   const [saving, setSaving] = useState<boolean>(false);
   const [picking, setPicking] = useState<boolean>(false);
   const imageCanvasRef = useRef<ImageCanvasHandle | null>(null);
+  const viewShotRef = useRef<ViewShot | null>(null);
   const { t } = useI18n();
   const { theme } = useTheme();
   const router = useRouter();
@@ -41,7 +42,7 @@ const Index = () => {
     checkAndMaybeUpdate({ flexible: true }).catch(() => {});
   }, []);
 
-  const pickImage = async () => {
+  const pickBaseImage = async () => {
     if (picking) return;
     try {
       setPicking(true);
@@ -50,50 +51,75 @@ const Index = () => {
         quality: 1,
       });
       if (!result.canceled) {
-        // reset all adjustments when picking a new image
-        resetAll();
-        imageCanvasRef.current?.resetTransform();
-        setImageUri(result.assets[0].uri);
+        setBaseImageUri(result.assets[0].uri);
+        setOverlayImageUri(null);
+        setOverlayTransform({ x: 0, y: 0, scale: 1, rotation: 0 });
       }
     } finally {
       setPicking(false);
     }
   };
 
-  const resetAll = () => {
-    setAngle(0);
-    setAngleInput('0');
+  const pickOverlayImage = async () => {
+    if (!baseImageUri || picking) {
+      if (!baseImageUri) {
+        Toast.show({
+          type: 'info',
+          text1: t('addBasePhoto'),
+          text2: t('selectBaseImage'),
+          position: 'top',
+          visibilityTime: 2500,
+        });
+      }
+      return;
+    }
+
+    try {
+      setPicking(true);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 1,
+      });
+
+      if (!result.canceled) {
+        setOverlayImageUri(result.assets[0].uri);
+        setOverlayTransform({ x: 0, y: 0, scale: 1, rotation: 0 });
+        imageCanvasRef.current?.resetOverlay();
+      }
+    } finally {
+      setPicking(false);
+    }
+  };
+
+  const handleOverlayTransformChange = useCallback((next: OverlayTransform) => {
+    setOverlayTransform(next);
+  }, []);
+
+  const handleRotateOverlay = (delta: number) => {
+    setOverlayTransform((prev) => ({
+      ...prev,
+      rotation: prev.rotation + delta,
+    }));
+  };
+
+  const handleResetOverlay = () => {
+    if (imageCanvasRef.current) {
+      imageCanvasRef.current.resetOverlay();
+    } else {
+      setOverlayTransform({ x: 0, y: 0, scale: 1, rotation: 0 });
+    }
   };
 
   const saveImage = async () => {
-    if (!imageUri || saving) return;
+    if (!baseImageUri || saving) return;
     try {
       setSaving(true);
+      const uri = await viewShotRef.current?.capture?.();
+      if (!uri) {
+        throw new Error('capture_failed');
+      }
 
-      // Определяем формат исходного изображения
-      const getImageFormat = (uri: string): ImageManipulator.SaveFormat => {
-        const extension = uri.toLowerCase().split('.').pop();
-        switch (extension) {
-          case 'png':
-            return ImageManipulator.SaveFormat.PNG;
-          case 'webp':
-            return ImageManipulator.SaveFormat.WEBP;
-          case 'jpeg':
-          case 'jpg':
-          default:
-            return ImageManipulator.SaveFormat.JPEG;
-        }
-      };
-
-      const originalFormat = getImageFormat(imageUri);
-
-      // На Android/iOS достаточно ранее выданного доступа на медиатеку (через ImagePicker).
-      const manipulated = await ImageManipulator.manipulateAsync(imageUri, [{ rotate: Math.round(angle) }], {
-        compress: originalFormat === ImageManipulator.SaveFormat.PNG ? 1 : 0.9,
-        format: originalFormat,
-      });
-
-      await MediaLibrary.saveToLibraryAsync(manipulated.uri);
+      await MediaLibrary.saveToLibraryAsync(uri);
       Toast.show({
         type: 'success',
         text1: t('saved'),
@@ -128,51 +154,28 @@ const Index = () => {
             justifyContent: 'center',
           }}
         >
-          {imageUri ? (
-            <ImageCanvas ref={imageCanvasRef} imageUri={imageUri} angle={angle} onPickAnother={pickImage} />
+          {baseImageUri ? (
+            <ViewShot ref={viewShotRef} style={{ flex: 1, width: '100%' }} options={{ format: 'png', quality: 1 }} collapsable={false}>
+              <ImageCanvas ref={imageCanvasRef} baseImageUri={baseImageUri} overlayImageUri={overlayImageUri} overlayTransform={overlayTransform} onOverlayTransformChange={handleOverlayTransformChange} />
+            </ViewShot>
           ) : (
-            <PickingPlaceholder picking={picking} onPick={pickImage} />
+            <PickingPlaceholder picking={picking} onPick={pickBaseImage} />
           )}
         </View>
 
-        {imageUri && (
+        {baseImageUri && (
           <ControlsPanel
-            angle={angle}
-            angleInput={angleInput}
-            onAngleInputChange={(t) => {
-              const cleaned = t.replace(/[^0-9-]/g, '');
-              const normalized = cleaned.replace(/(?!^)-/g, '');
-              setAngleInput(normalized);
+            hasBaseImage={!!baseImageUri}
+            hasOverlayImage={!!overlayImageUri}
+            overlayRotation={overlayTransform.rotation}
+            onPickBase={pickBaseImage}
+            onPickOverlay={pickOverlayImage}
+            onRemoveOverlay={() => {
+              setOverlayImageUri(null);
+              setOverlayTransform({ x: 0, y: 0, scale: 1, rotation: 0 });
             }}
-            onAngleCommit={() => {
-              const n = Number.parseInt(angleInput || '0', 10);
-              const clamped = Math.max(-180, Math.min(180, isNaN(n) ? 0 : n));
-              setAngle(clamped);
-              setAngleInput(String(clamped));
-            }}
-            onReset={() => {
-              resetAll();
-              imageCanvasRef.current?.resetTransform();
-            }}
-            onAngleChange={(value) => {
-              // clamp and normalize smoothly
-              let next = Math.max(-180, Math.min(180, Math.round(value)));
-              if (next > 180) next -= 360;
-              if (next < -180) next += 360;
-              setAngle(next);
-              setAngleInput(String(next));
-            }}
-            onSliderCommit={(value) => {
-              let next = Math.max(-180, Math.min(180, Math.round(value)));
-              if (next > 180) next -= 360;
-              if (next < -180) next += 360;
-              setAngle(next);
-              setAngleInput(String(next));
-            }}
-            onPickAnother={() => {
-              // allow user to choose another image
-              pickImage();
-            }}
+            onResetOverlay={handleResetOverlay}
+            onRotateOverlay={handleRotateOverlay}
             saving={saving}
             onSave={saveImage}
           />
