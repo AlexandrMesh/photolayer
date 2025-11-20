@@ -7,7 +7,6 @@ import * as MediaLibrary from 'expo-media-library';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
-import ViewShot from 'react-native-view-shot';
 
 import ControlsPanel from '../components/ControlsPanel';
 import Header from '../components/Header';
@@ -25,7 +24,6 @@ const Index = () => {
   const [saving, setSaving] = useState<boolean>(false);
   const [picking, setPicking] = useState<boolean>(false);
   const imageCanvasRef = useRef<ImageCanvasHandle | null>(null);
-  const viewShotRef = useRef<ViewShot | null>(null);
   const { t } = useI18n();
   const { theme } = useTheme();
   const router = useRouter();
@@ -114,7 +112,7 @@ const Index = () => {
     if (!baseImageUri || saving) return;
     try {
       setSaving(true);
-      const uri = await viewShotRef.current?.capture?.();
+      const uri = await imageCanvasRef.current?.capture();
       if (!uri) {
         throw new Error('capture_failed');
       }
@@ -155,9 +153,7 @@ const Index = () => {
           }}
         >
           {baseImageUri ? (
-            <ViewShot ref={viewShotRef} style={{ flex: 1, width: '100%' }} options={{ format: 'png', quality: 1 }} collapsable={false}>
-              <ImageCanvas ref={imageCanvasRef} baseImageUri={baseImageUri} overlayImageUri={overlayImageUri} overlayTransform={overlayTransform} onOverlayTransformChange={handleOverlayTransformChange} />
-            </ViewShot>
+            <ImageCanvas ref={imageCanvasRef} baseImageUri={baseImageUri} overlayImageUri={overlayImageUri} overlayTransform={overlayTransform} onOverlayTransformChange={handleOverlayTransformChange} />
           ) : (
             <PickingPlaceholder picking={picking} onPick={pickBaseImage} />
           )}
