@@ -1,0 +1,12 @@
+# EAS Build Ignore
+# Эти папки не должны загружаться на EAS Build сервер
+# Prebuild будет выполнен удаленно
+
+# Native folders - будут сгенерированы через prebuild на сервере
+ios/
+android/
+
+# Local development
+.expo/
+node_modules/
+
