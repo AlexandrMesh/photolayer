@@ -487,6 +487,140 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
     };
   });
 
+  // Constrain layer position to stay within base image bounds
+  // This function calculates the bounding box of rotated/scaled layer and constrains its position
+  const constrainLayerPosition = useCallback(
+    (layer: Layer, layerSize: LayerSize, boundsAtScale1: { x: number; y: number; width: number; height: number }) => {
+      // Calculate layer display size at base scale 1
+      const maxWidthAtScale1 = boundsAtScale1.width * 0.6;
+      const maxHeightAtScale1 = boundsAtScale1.height * 0.6;
+      const aspect = layerSize.width / layerSize.height;
+      let layerWidthAtScale1 = maxWidthAtScale1;
+      let layerHeightAtScale1 = layerWidthAtScale1 / aspect;
+      if (layerHeightAtScale1 > maxHeightAtScale1) {
+        layerHeightAtScale1 = maxHeightAtScale1;
+        layerWidthAtScale1 = layerHeightAtScale1 * aspect;
+      }
+
+      const scaledLayerWidthAtScale1 = layerWidthAtScale1 * layer.transform.scale;
+      const scaledLayerHeightAtScale1 = layerHeightAtScale1 * layer.transform.scale;
+
+      // Calculate bounding box of rotated and scaled layer
+      const rotationRad = (layer.transform.rotation * Math.PI) / 180;
+      const cos = Math.abs(Math.cos(rotationRad));
+      const sin = Math.abs(Math.sin(rotationRad));
+
+      // Bounding box dimensions for rotated rectangle
+      const boundingWidth = scaledLayerWidthAtScale1 * cos + scaledLayerHeightAtScale1 * sin;
+      const boundingHeight = scaledLayerWidthAtScale1 * sin + scaledLayerHeightAtScale1 * cos;
+
+      // Base center at scale 1
+      const baseCenterX = boundsAtScale1.x + boundsAtScale1.width / 2;
+      const baseCenterY = boundsAtScale1.y + boundsAtScale1.height / 2;
+
+      // Calculate constraints
+      const halfWidth = boundingWidth / 2;
+      const halfHeight = boundingHeight / 2;
+      const minX = boundsAtScale1.x + halfWidth;
+      const maxX = boundsAtScale1.x + boundsAtScale1.width - halfWidth;
+      const minY = boundsAtScale1.y + halfHeight;
+      const maxY = boundsAtScale1.y + boundsAtScale1.height - halfHeight;
+
+      // Current layer center position
+      const currentLayerCenterX = baseCenterX + layer.transform.x;
+      const currentLayerCenterY = baseCenterY + layer.transform.y;
+
+      // Constrain to base bounds
+      const constrainedCenterX = Math.max(minX, Math.min(maxX, currentLayerCenterX));
+      const constrainedCenterY = Math.max(minY, Math.min(maxY, currentLayerCenterY));
+
+      // Convert back to offset from base center
+      return {
+        x: constrainedCenterX - baseCenterX,
+        y: constrainedCenterY - baseCenterY,
+      };
+    },
+    [],
+  );
+
+  // Track previous layer transforms to detect rotation/scale changes
+  const prevLayerTransformsRef = useRef<Record<string, { rotation: number; scale: number }>>({});
+
+  // Auto-constrain layer positions when rotation or scale changes
+  useEffect(() => {
+    if (!baseImageSize.width || !baseImageSize.height || !containerSize.width || !containerSize.height) {
+      return;
+    }
+
+    // Calculate base display bounds
+    const containerRatio = containerSize.width / containerSize.height;
+    const imageRatio = baseImageSize.width / baseImageSize.height;
+
+    let width = containerSize.width;
+    let height = containerSize.height;
+    if (imageRatio > containerRatio) {
+      width = containerSize.width;
+      height = width / imageRatio;
+    } else {
+      height = containerSize.height;
+      width = height * imageRatio;
+    }
+    const x = (containerSize.width - width) / 2;
+    const y = (containerSize.height - height) / 2;
+    const boundsAtScale1 = { x, y, width, height };
+
+    // Clean up removed layers from ref
+    const currentLayerIds = new Set(layers.map((l) => l.id));
+    Object.keys(prevLayerTransformsRef.current).forEach((id) => {
+      if (!currentLayerIds.has(id)) {
+        delete prevLayerTransformsRef.current[id];
+      }
+    });
+
+    // Check each layer and constrain if rotation or scale changed
+    const updatedLayers = layers.map((layer) => {
+      const layerSize = layerSizes[layer.id];
+      if (!layerSize?.width || !layerSize?.height) {
+        return layer;
+      }
+
+      const prevTransform = prevLayerTransformsRef.current[layer.id];
+      const currentRotation = layer.transform.rotation;
+      const currentScale = layer.transform.scale;
+
+      // Initialize or update previous transform
+      if (!prevTransform) {
+        prevLayerTransformsRef.current[layer.id] = { rotation: currentRotation, scale: currentScale };
+        return layer;
+      }
+
+      // Only constrain if rotation or scale changed
+      if (prevTransform.rotation === currentRotation && prevTransform.scale === currentScale) {
+        return layer;
+      }
+
+      // Update previous transform
+      prevLayerTransformsRef.current[layer.id] = { rotation: currentRotation, scale: currentScale };
+
+      // Constrain position
+      const constrained = constrainLayerPosition(layer, layerSize, boundsAtScale1);
+      if (constrained.x !== layer.transform.x || constrained.y !== layer.transform.y) {
+        return { ...layer, transform: { ...layer.transform, x: constrained.x, y: constrained.y } };
+      }
+      return layer;
+    });
+
+    // Only update if something changed
+    const hasChanges = updatedLayers.some((updatedLayer, index) => {
+      const originalLayer = layers[index];
+      return updatedLayer.transform.x !== originalLayer.transform.x || updatedLayer.transform.y !== originalLayer.transform.y;
+    });
+
+    if (hasChanges) {
+      onLayersChange(updatedLayers);
+    }
+  }, [layers, layerSizes, baseImageSize, containerSize, constrainLayerPosition, onLayersChange]);
+
   // Update layer position with constraints
   // Layers are now inside the base image container, so positions are in container coordinates (at scale 1)
   // When base image transforms, layers automatically transform with it
@@ -516,6 +650,16 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
       const scaledLayerWidthAtScale1 = layerWidthAtScale1 * layer.transform.scale;
       const scaledLayerHeightAtScale1 = layerHeightAtScale1 * layer.transform.scale;
 
+      // Calculate bounding box of rotated and scaled layer
+      // When a rectangle is rotated, its bounding box is larger than the rectangle itself
+      const rotationRad = (layer.transform.rotation * Math.PI) / 180;
+      const cos = Math.abs(Math.cos(rotationRad));
+      const sin = Math.abs(Math.sin(rotationRad));
+
+      // Bounding box dimensions for rotated rectangle
+      const boundingWidth = scaledLayerWidthAtScale1 * cos + scaledLayerHeightAtScale1 * sin;
+      const boundingHeight = scaledLayerWidthAtScale1 * sin + scaledLayerHeightAtScale1 * cos;
+
       // Base center at scale 1 (anchor point) - in container coordinates
       // The actual base image is at boundsAtScale1.x, boundsAtScale1.y with boundsAtScale1.width x boundsAtScale1.height
       const baseCenterX = boundsAtScale1.x + boundsAtScale1.width / 2;
@@ -523,8 +667,9 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
 
       // Calculate constraints in container coordinates (at scale 1)
       // Layers must stay within the actual base image bounds
-      const halfWidth = scaledLayerWidthAtScale1 / 2;
-      const halfHeight = scaledLayerHeightAtScale1 / 2;
+      // Use bounding box dimensions to ensure rotated/scaled layer doesn't go outside
+      const halfWidth = boundingWidth / 2;
+      const halfHeight = boundingHeight / 2;
       const minX = boundsAtScale1.x + halfWidth;
       const maxX = boundsAtScale1.x + boundsAtScale1.width - halfWidth;
       const minY = boundsAtScale1.y + halfHeight;
