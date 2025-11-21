@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 
 import { Image, Pressable, Text, View, type LayoutChangeEvent } from 'react-native';
 
@@ -151,53 +151,91 @@ type LayerCaptureProps = {
 };
 
 const LayerCapture = ({ layer, layerSize, baseImageSizeShared, baseDisplayBounds }: LayerCaptureProps) => {
-  const animatedStyle = useAnimatedStyle(() => {
+  // Compute style synchronously using useMemo for ViewShot compatibility
+  const style = useMemo(() => {
+    // Read values from shared values synchronously
     const bounds = baseDisplayBounds.value;
     const baseSize = baseImageSizeShared.value;
-    if (!bounds.width || !bounds.height || !baseSize.width || !baseSize.height) {
-      return { position: 'absolute', width: 0, height: 0, opacity: 0 };
+
+    if (!bounds.width || !bounds.height || !baseSize.width || !baseSize.height || !layerSize?.width || !layerSize?.height) {
+      return null;
     }
 
-    if (!layerSize?.width || !layerSize?.height) {
-      return { position: 'absolute', width: 0, height: 0, opacity: 0 };
+    // In ViewShot, container is baseSize.width x baseSize.height
+    // Base image uses resizeMode='contain', so we need to calculate actual image bounds
+    const containerWidth = baseSize.width;
+    const containerHeight = baseSize.height;
+    const containerRatio = containerWidth / containerHeight;
+    const imageRatio = baseSize.width / baseSize.height;
+
+    // Calculate actual base image bounds in ViewShot (with contain mode)
+    let imageWidth = containerWidth;
+    let imageHeight = containerHeight;
+    let imageX = 0;
+    let imageY = 0;
+    if (imageRatio > containerRatio) {
+      imageWidth = containerWidth;
+      imageHeight = imageWidth / imageRatio;
+      imageY = (containerHeight - imageHeight) / 2;
+    } else {
+      imageHeight = containerHeight;
+      imageWidth = imageHeight * imageRatio;
+      imageX = (containerWidth - imageWidth) / 2;
     }
 
-    const scaleX = baseSize.width / bounds.width;
-    const scaleY = baseSize.height / bounds.height;
+    // Scale factor from display bounds (on screen) to ViewShot image bounds
+    const scaleX = imageWidth / bounds.width;
+    const scaleY = imageHeight / bounds.height;
 
-    const maxWidth = bounds.width * 0.6;
-    const maxHeight = bounds.height * 0.6;
+    // Calculate layer size at base image scale 1 (in display bounds coordinates)
+    const maxWidthAtBaseScale1 = bounds.width * 0.6;
+    const maxHeightAtBaseScale1 = bounds.height * 0.6;
     const aspect = layerSize.width / layerSize.height;
-    let layerWidth = maxWidth;
-    let layerHeight = layerWidth / aspect;
-    if (layerHeight > maxHeight) {
-      layerHeight = maxHeight;
-      layerWidth = layerHeight * aspect;
+    let layerWidthAtBaseScale1 = maxWidthAtBaseScale1;
+    let layerHeightAtBaseScale1 = layerWidthAtBaseScale1 / aspect;
+    if (layerHeightAtBaseScale1 > maxHeightAtBaseScale1) {
+      layerHeightAtBaseScale1 = maxHeightAtBaseScale1;
+      layerWidthAtBaseScale1 = layerHeightAtBaseScale1 * aspect;
     }
 
-    const scaledWidth = layerWidth * layer.transform.scale * scaleX;
-    const scaledHeight = layerHeight * layer.transform.scale * scaleY;
+    // Layer size at scale 1 (in display bounds coordinates)
+    const layerWidth = layerWidthAtBaseScale1 * layer.transform.scale;
+    const layerHeight = layerHeightAtBaseScale1 * layer.transform.scale;
 
-    const baseCenterX = baseSize.width / 2;
-    const baseCenterY = baseSize.height / 2;
+    // Layer position: stored as offset from base center in display bounds coordinates
+    const offsetX = layer.transform.x;
+    const offsetY = layer.transform.y;
 
-    const left = baseCenterX - scaledWidth / 2 + layer.transform.x * scaleX;
-    const top = baseCenterY - scaledHeight / 2 + layer.transform.y * scaleY;
+    // Base center in ViewShot image coordinates
+    const baseCenterX = imageX + imageWidth / 2;
+    const baseCenterY = imageY + imageHeight / 2;
+
+    // Convert layer position from display bounds to ViewShot image coordinates
+    const layerOffsetXInBase = offsetX * scaleX;
+    const layerOffsetYInBase = offsetY * scaleY;
+
+    // Final position: base center + scaled layer offset
+    const left = baseCenterX + layerOffsetXInBase - (layerWidth * scaleX) / 2;
+    const top = baseCenterY + layerOffsetYInBase - (layerHeight * scaleY) / 2;
 
     return {
-      position: 'absolute',
+      position: 'absolute' as const,
       left,
       top,
-      width: scaledWidth,
-      height: scaledHeight,
+      width: layerWidth * scaleX,
+      height: layerHeight * scaleY,
       transform: [{ rotate: `${layer.transform.rotation}deg` }],
     };
-  }, [layer, layerSize]);
+  }, [layer, layerSize, baseImageSizeShared, baseDisplayBounds]);
+
+  if (!style || !layerSize?.width || !layerSize?.height) {
+    return null;
+  }
 
   return (
-    <Animated.View style={[animatedStyle]}>
+    <View style={style}>
       <Image source={{ uri: layer.uri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
-    </Animated.View>
+    </View>
   );
 };
 
