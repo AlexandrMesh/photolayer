@@ -41,50 +41,57 @@ type LayerDisplayProps = {
   layerSize?: LayerSize;
   selected: boolean;
   baseDisplayBounds: SharedValue<Bounds>;
-  baseScale: SharedValue<number>;
   gesture?: ReturnType<typeof Gesture.Simultaneous>;
 };
 
-const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, baseScale, gesture }: LayerDisplayProps) => {
+const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture }: LayerDisplayProps) => {
   const animatedStyle = useAnimatedStyle(() => {
     if (!layerSize?.width || !layerSize?.height) {
       return { position: 'absolute', width: 0, height: 0, opacity: 0 };
     }
 
     const bounds = baseDisplayBounds.value;
-    const baseScaleValue = baseScale.value;
 
-    // Base center in container (remains constant at bounds.x + bounds.width/2)
-    // This is the center point around which scaling happens
+    // Calculate layer size at base image scale 1
+    // Layers are now inside the base image container, so they scale automatically with it
+    const maxWidthAtBaseScale1 = bounds.width * 0.6;
+    const maxHeightAtBaseScale1 = bounds.height * 0.6;
+    const aspect = layerSize.width / layerSize.height;
+    let layerWidthAtBaseScale1 = maxWidthAtBaseScale1;
+    let layerHeightAtBaseScale1 = layerWidthAtBaseScale1 / aspect;
+    if (layerHeightAtBaseScale1 > maxHeightAtBaseScale1) {
+      layerHeightAtBaseScale1 = maxHeightAtBaseScale1;
+      layerWidthAtBaseScale1 = layerHeightAtBaseScale1 * aspect;
+    }
+
+    // Layer size at scale 1 (will be scaled by parent container)
+    const layerWidth = layerWidthAtBaseScale1 * layer.transform.scale;
+    const layerHeight = layerHeightAtBaseScale1 * layer.transform.scale;
+
+    // Base center at scale 1 (anchor point for layers)
+    // Position is relative to the base image container (which is 100% x 100%)
+    // But the actual base image is at bounds.x, bounds.y with bounds.width x bounds.height
+    // So we need to position layers relative to the actual base image center
     const baseCenterX = bounds.x + bounds.width / 2;
     const baseCenterY = bounds.y + bounds.height / 2;
 
-    // Calculate layer size at scale 1 first, then scale with baseScaleValue
-    const maxWidthAtScale1 = bounds.width * 0.6;
-    const maxHeightAtScale1 = bounds.height * 0.6;
-    const aspect = layerSize.width / layerSize.height;
-    let layerWidthAtScale1 = maxWidthAtScale1;
-    let layerHeightAtScale1 = layerWidthAtScale1 / aspect;
-    if (layerHeightAtScale1 > maxHeightAtScale1) {
-      layerHeightAtScale1 = maxHeightAtScale1;
-      layerWidthAtScale1 = layerHeightAtScale1 * aspect;
-    }
+    // Layer position: stored as offset from base center at scale 1
+    // Since layers are inside the base image container, they automatically get the same transforms
+    // We just need to position them relative to the actual base image center
+    const offsetX = layer.transform.x;
+    const offsetY = layer.transform.y;
 
-    // Scale layer size with base scale
-    const scaledWidth = layerWidthAtScale1 * layer.transform.scale * baseScaleValue;
-    const scaledHeight = layerHeightAtScale1 * layer.transform.scale * baseScaleValue;
-
-    // Layer position: stored at scale 1, so we scale it with baseScaleValue
-    // Position is relative to base center, scaled proportionally with base image
-    const left = baseCenterX - scaledWidth / 2 + layer.transform.x * baseScaleValue;
-    const top = baseCenterY - scaledHeight / 2 + layer.transform.y * baseScaleValue;
+    // Final position: base center + layer offset
+    // The parent container will apply scale and translation automatically
+    const left = baseCenterX + offsetX - layerWidth / 2;
+    const top = baseCenterY + offsetY - layerHeight / 2;
 
     return {
       position: 'absolute',
       left,
       top,
-      width: scaledWidth,
-      height: scaledHeight,
+      width: layerWidth,
+      height: layerHeight,
       transform: [{ rotate: `${layer.transform.rotation}deg` }],
     };
   }, [layer, layerSize]);
@@ -443,47 +450,50 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
   });
 
   // Update layer position with constraints
+  // Layers are now inside the base image container, so positions are in container coordinates (at scale 1)
+  // When base image transforms, layers automatically transform with it
   const updateLayerPosition = useCallback(
-    (
-      layerId: string,
-      newX: number,
-      newY: number,
-      baseScaleValue: number,
-      baseBounds: { actualBaseX: number; actualBaseY: number; actualBaseWidth: number; actualBaseHeight: number },
-    ) => {
+    (layerId: string, newX: number, newY: number, boundsAtScale1: { x: number; y: number; width: number; height: number }) => {
       const layer = layers.find((l) => l.id === layerId);
       if (!layer) return;
 
       const layerSize = layerSizes[layerId];
       if (!layerSize?.width || !layerSize?.height) return;
 
-      // Calculate layer display size (fit within 60% of base)
-      const maxWidth = baseBounds.actualBaseWidth * 0.6;
-      const maxHeight = baseBounds.actualBaseHeight * 0.6;
+      // Get base display bounds at scale 1
+      const baseWidthAtScale1 = boundsAtScale1.width;
+      const baseHeightAtScale1 = boundsAtScale1.height;
+
+      // Calculate layer display size at base scale 1
+      const maxWidthAtScale1 = baseWidthAtScale1 * 0.6;
+      const maxHeightAtScale1 = baseHeightAtScale1 * 0.6;
       const aspect = layerSize.width / layerSize.height;
-      let layerWidth = maxWidth;
-      let layerHeight = layerWidth / aspect;
-      if (layerHeight > maxHeight) {
-        layerHeight = maxHeight;
-        layerWidth = layerHeight * aspect;
+      let layerWidthAtScale1 = maxWidthAtScale1;
+      let layerHeightAtScale1 = layerWidthAtScale1 / aspect;
+      if (layerHeightAtScale1 > maxHeightAtScale1) {
+        layerHeightAtScale1 = maxHeightAtScale1;
+        layerWidthAtScale1 = layerHeightAtScale1 * aspect;
       }
 
-      const scaledLayerWidth = layerWidth * layer.transform.scale;
-      const scaledLayerHeight = layerHeight * layer.transform.scale;
+      const scaledLayerWidthAtScale1 = layerWidthAtScale1 * layer.transform.scale;
+      const scaledLayerHeightAtScale1 = layerHeightAtScale1 * layer.transform.scale;
 
-      // Base center in container coordinates
-      const baseCenterX = baseBounds.actualBaseX + baseBounds.actualBaseWidth / 2;
-      const baseCenterY = baseBounds.actualBaseY + baseBounds.actualBaseHeight / 2;
+      // Base center at scale 1 (anchor point) - in container coordinates
+      // The actual base image is at boundsAtScale1.x, boundsAtScale1.y with boundsAtScale1.width x boundsAtScale1.height
+      const baseCenterX = boundsAtScale1.x + boundsAtScale1.width / 2;
+      const baseCenterY = boundsAtScale1.y + boundsAtScale1.height / 2;
 
-      // Calculate min/max positions for layer center
-      const halfWidth = scaledLayerWidth / 2;
-      const halfHeight = scaledLayerHeight / 2;
-      const minX = baseBounds.actualBaseX + halfWidth;
-      const maxX = baseBounds.actualBaseX + baseBounds.actualBaseWidth - halfWidth;
-      const minY = baseBounds.actualBaseY + halfHeight;
-      const maxY = baseBounds.actualBaseY + baseBounds.actualBaseHeight - halfHeight;
+      // Calculate constraints in container coordinates (at scale 1)
+      // Layers must stay within the actual base image bounds
+      const halfWidth = scaledLayerWidthAtScale1 / 2;
+      const halfHeight = scaledLayerHeightAtScale1 / 2;
+      const minX = boundsAtScale1.x + halfWidth;
+      const maxX = boundsAtScale1.x + boundsAtScale1.width - halfWidth;
+      const minY = boundsAtScale1.y + halfHeight;
+      const maxY = boundsAtScale1.y + boundsAtScale1.height - halfHeight;
 
-      // Current layer center position in screen coordinates
+      // Current layer center position in container coordinates
+      // newX and newY are offsets from base center, so convert to absolute position
       const currentLayerCenterX = baseCenterX + newX;
       const currentLayerCenterY = baseCenterY + newY;
 
@@ -491,14 +501,9 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
       const constrainedCenterX = Math.max(minX, Math.min(maxX, currentLayerCenterX));
       const constrainedCenterY = Math.max(minY, Math.min(maxY, currentLayerCenterY));
 
-      // Layer position relative to base center in screen coordinates
-      const constrainedXScreen = constrainedCenterX - baseCenterX;
-      const constrainedYScreen = constrainedCenterY - baseCenterY;
-
-      // Convert to scale-1 coordinates for storage
-      // This ensures positions are stored at base scale 1, and will be scaled on display
-      const constrainedX = constrainedXScreen / baseScaleValue;
-      const constrainedY = constrainedYScreen / baseScaleValue;
+      // Convert back to offset from base center
+      const constrainedX = constrainedCenterX - baseCenterX;
+      const constrainedY = constrainedCenterY - baseCenterY;
 
       onLayersChange(layers.map((l) => (l.id === layerId ? { ...l, transform: { ...l.transform, x: constrainedX, y: constrainedY } } : l)));
     },
@@ -518,49 +523,40 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
   );
 
   // Create layer pan gesture
+  // Layers are now inside the base image container, so gestures work in container coordinates
   const createLayerPan = useCallback(
     (layer: Layer) => {
       const layerPanGesture = Gesture.Pan()
         .minDistance(1)
         .onStart(() => {
           'worklet';
-          // Store position in screen coordinates (scale-1 coordinates * current scale)
-          const baseScaleValue = baseScale.value;
+          // Store position in container coordinates (at scale 1)
           layerPanStart.current[layer.id] = {
-            x: layer.transform.x * baseScaleValue,
-            y: layer.transform.y * baseScaleValue,
+            x: layer.transform.x,
+            y: layer.transform.y,
           };
           runOnJS(onSelectLayer)(layer.id);
         })
         .onUpdate((event) => {
           'worklet';
           const bounds = baseDisplayBounds.value;
-          const baseScaleValue = baseScale.value;
-          const baseTranslateXValue = baseTranslateX.value;
-          const baseTranslateYValue = baseTranslateY.value;
-
-          // Calculate actual base image bounds considering scale and translation
-          const actualBaseX = bounds.x + baseTranslateXValue;
-          const actualBaseY = bounds.y + baseTranslateYValue;
-          const actualBaseWidth = bounds.width * baseScaleValue;
-          const actualBaseHeight = bounds.height * baseScaleValue;
 
           // Get layer size - need to access from closure
-          // We'll calculate constraints and pass to JS
           const panStart = layerPanStart.current[layer.id];
           if (!panStart) return;
 
-          // Calculate new position in screen coordinates
-          const newX = panStart.x + event.translationX;
-          const newY = panStart.y + event.translationY;
+          // Calculate new position in container coordinates
+          // Since layers are inside the base container, translation is already in container coordinates
+          const newX = panStart.x + event.translationX / baseScale.value;
+          const newY = panStart.y + event.translationY / baseScale.value;
 
           // Calculate constraints in JS callback
-          // Pass baseScaleValue to convert screen coordinates to scale-1 coordinates
-          runOnJS(updateLayerPosition)(layer.id, newX, newY, baseScaleValue, {
-            actualBaseX,
-            actualBaseY,
-            actualBaseWidth,
-            actualBaseHeight,
+          // Pass bounds at scale 1 for calculating layer sizes and constraints
+          runOnJS(updateLayerPosition)(layer.id, newX, newY, {
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
           });
         })
         .onEnd(() => {
@@ -572,7 +568,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
       // Make layer gesture have priority over base gestures
       return layerPanGesture;
     },
-    [baseScale, baseTranslateX, baseTranslateY, baseDisplayBounds, onSelectLayer, updateLayerPosition],
+    [baseScale, baseDisplayBounds, onSelectLayer, updateLayerPosition],
   );
 
   useImperativeHandle(ref, () => ({
@@ -586,35 +582,34 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
       <GestureDetector gesture={baseGesture}>
         <Animated.View style={[{ width: '100%', height: '100%' }, baseAnimatedStyle]}>
           <Image source={{ uri: baseImageUri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
+
+          {/* Layers inside base image container - they automatically get the same transforms */}
+          {layers.map((layer) => {
+            const layerSize = layerSizes[layer.id];
+            const isSelected = selectedLayerId === layer.id;
+            const layerPan = createLayerPan(layer);
+
+            // Only render layer if size is loaded
+            if (!layerSize?.width || !layerSize?.height) {
+              return null;
+            }
+
+            const layerTap = createLayerTap(layer);
+            const layerGesture = Gesture.Simultaneous(layerTap, layerPan);
+
+            return (
+              <LayerDisplay
+                key={layer.id}
+                layer={layer}
+                layerSize={layerSize}
+                selected={isSelected}
+                baseDisplayBounds={baseDisplayBounds}
+                gesture={layerGesture}
+              />
+            );
+          })}
         </Animated.View>
       </GestureDetector>
-
-      {/* Layers outside base gesture to avoid conflicts */}
-      {layers.map((layer) => {
-        const layerSize = layerSizes[layer.id];
-        const isSelected = selectedLayerId === layer.id;
-        const layerPan = createLayerPan(layer);
-
-        // Only render layer if size is loaded
-        if (!layerSize?.width || !layerSize?.height) {
-          return null;
-        }
-
-        const layerTap = createLayerTap(layer);
-        const layerGesture = Gesture.Simultaneous(layerTap, layerPan);
-
-        return (
-          <LayerDisplay
-            key={layer.id}
-            layer={layer}
-            layerSize={layerSize}
-            selected={isSelected}
-            baseDisplayBounds={baseDisplayBounds}
-            baseScale={baseScale}
-            gesture={layerGesture}
-          />
-        );
-      })}
 
       {/* Hidden ViewShot for capture */}
       {baseImageSize.width > 0 && baseImageSize.height > 0 && (
