@@ -44,4 +44,8 @@ export default {
   noUpdateAvailable: 'You are on the latest version',
   currentVersion: 'Current version',
   checkForUpdatesBelow: 'Check for updates below',
+  layers: 'Layers',
+  layer: 'Layer',
+  noLayers: 'No layers',
+  addLayerHint: 'Press + to add a layer',
 };

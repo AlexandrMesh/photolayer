@@ -1,102 +1,209 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
-import { Image, Pressable, Text, View, type LayoutChangeEvent } from 'react-native';
+import { Image, View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import ViewShot from 'react-native-view-shot';
+import type { SharedValue } from 'react-native-reanimated';
 
-export type OverlayTransform = {
+export type LayerTransform = {
   x: number;
   y: number;
   scale: number;
   rotation: number;
 };
 
+export type Layer = {
+  id: string;
+  uri: string;
+  transform: LayerTransform;
+};
+
+type LayerSize = { width: number; height: number };
+type Bounds = { x: number; y: number; width: number; height: number };
+
 type Props = {
   baseImageUri: string;
-  overlayImageUri?: string | null;
-  overlayTransform: OverlayTransform;
-  onOverlayTransformChange: (transform: OverlayTransform) => void;
+  layers: Layer[];
+  onLayersChange: (layers: Layer[]) => void;
+  selectedLayerId: string | null;
+  onSelectLayer: (layerId: string | null) => void;
 };
 
 export type ImageCanvasHandle = {
-  resetOverlay: () => void;
   capture: () => Promise<string | undefined>;
 };
 
-const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
-  ({ baseImageUri, overlayImageUri, overlayTransform, onOverlayTransformChange }: Props, ref) => {
-    const overlayScale = useSharedValue(overlayTransform.scale);
-    const overlayRotation = useSharedValue(overlayTransform.rotation);
-    const overlayTranslateX = useSharedValue(overlayTransform.x);
-    const overlayTranslateY = useSharedValue(overlayTransform.y);
+type LayerDisplayProps = {
+  layer: Layer;
+  layerSize?: LayerSize;
+  selected: boolean;
+  baseDisplayBounds: SharedValue<Bounds>;
+  baseScale: SharedValue<number>;
+  baseTranslateX: SharedValue<number>;
+  baseTranslateY: SharedValue<number>;
+};
 
-    const cameraScale = useSharedValue(1);
-    const cameraTranslateX = useSharedValue(0);
-    const cameraTranslateY = useSharedValue(0);
-    const panStartX = useSharedValue(0);
-    const panStartY = useSharedValue(0);
+const LayerDisplay = ({
+  layer,
+  layerSize,
+  selected,
+  baseDisplayBounds,
+  baseScale,
+  baseTranslateX,
+  baseTranslateY,
+}: LayerDisplayProps) => {
+  const animatedStyle = useAnimatedStyle(() => {
+    if (!layerSize?.width || !layerSize?.height) {
+      return { position: 'absolute', width: 0, height: 0, opacity: 0 };
+    }
+
+    const bounds = baseDisplayBounds.value;
+    const baseScaleValue = baseScale.value;
+    const baseTranslateXValue = baseTranslateX.value;
+    const baseTranslateYValue = baseTranslateY.value;
+
+    const actualBaseX = bounds.x + baseTranslateXValue;
+    const actualBaseY = bounds.y + baseTranslateYValue;
+    const actualBaseWidth = bounds.width * baseScaleValue;
+    const actualBaseHeight = bounds.height * baseScaleValue;
+
+    const maxWidth = actualBaseWidth * 0.6;
+    const maxHeight = actualBaseHeight * 0.6;
+    const aspect = layerSize.width / layerSize.height;
+    let layerWidth = maxWidth;
+    let layerHeight = layerWidth / aspect;
+    if (layerHeight > maxHeight) {
+      layerHeight = maxHeight;
+      layerWidth = layerHeight * aspect;
+    }
+
+    const scaledWidth = layerWidth * layer.transform.scale;
+    const scaledHeight = layerHeight * layer.transform.scale;
+
+    const baseCenterX = actualBaseX + actualBaseWidth / 2;
+    const baseCenterY = actualBaseY + actualBaseHeight / 2;
+
+    const left = baseCenterX - scaledWidth / 2 + layer.transform.x;
+    const top = baseCenterY - scaledHeight / 2 + layer.transform.y;
+
+    return {
+      position: 'absolute',
+      left,
+      top,
+      width: scaledWidth,
+      height: scaledHeight,
+      transform: [{ rotate: `${layer.transform.rotation}deg` }],
+    };
+  }, [layer, layerSize]);
+
+  return (
+    <Animated.View style={[animatedStyle]}>
+      <Image source={{ uri: layer.uri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
+      {selected && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            borderWidth: 2,
+            borderColor: '#007AFF',
+            borderRadius: 4,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+    </Animated.View>
+  );
+};
+
+type LayerCaptureProps = {
+  layer: Layer;
+  layerSize?: LayerSize;
+  baseImageSizeShared: SharedValue<LayerSize>;
+  baseDisplayBounds: SharedValue<Bounds>;
+};
+
+const LayerCapture = ({ layer, layerSize, baseImageSizeShared, baseDisplayBounds }: LayerCaptureProps) => {
+  const animatedStyle = useAnimatedStyle(() => {
+    const bounds = baseDisplayBounds.value;
+    const baseSize = baseImageSizeShared.value;
+    if (!bounds.width || !bounds.height || !baseSize.width || !baseSize.height) {
+      return { position: 'absolute', width: 0, height: 0, opacity: 0 };
+    }
+
+    if (!layerSize?.width || !layerSize?.height) {
+      return { position: 'absolute', width: 0, height: 0, opacity: 0 };
+    }
+
+    const scaleX = baseSize.width / bounds.width;
+    const scaleY = baseSize.height / bounds.height;
+
+    const maxWidth = bounds.width * 0.6;
+    const maxHeight = bounds.height * 0.6;
+    const aspect = layerSize.width / layerSize.height;
+    let layerWidth = maxWidth;
+    let layerHeight = layerWidth / aspect;
+    if (layerHeight > maxHeight) {
+      layerHeight = maxHeight;
+      layerWidth = layerHeight * aspect;
+    }
+
+    const scaledWidth = layerWidth * layer.transform.scale * scaleX;
+    const scaledHeight = layerHeight * layer.transform.scale * scaleY;
+
+    const baseCenterX = baseSize.width / 2;
+    const baseCenterY = baseSize.height / 2;
+
+    const left = baseCenterX - scaledWidth / 2 + layer.transform.x * scaleX;
+    const top = baseCenterY - scaledHeight / 2 + layer.transform.y * scaleY;
+
+    return {
+      position: 'absolute',
+      left,
+      top,
+      width: scaledWidth,
+      height: scaledHeight,
+      transform: [{ rotate: `${layer.transform.rotation}deg` }],
+    };
+  }, [layer, layerSize]);
+
+  return (
+    <Animated.View style={[animatedStyle]}>
+      <Image source={{ uri: layer.uri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
+    </Animated.View>
+  );
+};
+
+const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
+  ({ baseImageUri, layers, onLayersChange, selectedLayerId, onSelectLayer }: Props, ref) => {
+    // Base image transforms
+    const baseScale = useSharedValue(1);
+    const baseTranslateX = useSharedValue(0);
+    const baseTranslateY = useSharedValue(0);
+    const basePanStartX = useSharedValue(0);
+    const basePanStartY = useSharedValue(0);
+    const basePinchStartScale = useSharedValue(1);
+
+    // Container dimensions
     const containerWidth = useSharedValue(0);
     const containerHeight = useSharedValue(0);
-    const baseBoundsShared = useSharedValue({ x: 0, y: 0, width: 0, height: 0 });
     const baseImageSizeShared = useSharedValue({ width: 0, height: 0 });
-    const overlayPanStartX = useSharedValue(0);
-    const overlayPanStartY = useSharedValue(0);
-    const overlayContainerSize = useSharedValue({ width: 0, height: 0 });
+    const baseDisplayBounds = useSharedValue({ x: 0, y: 0, width: 0, height: 0 });
 
-    const [scalePercent, setScalePercent] = useState(100);
-    const [isOverlayActive, setIsOverlayActive] = useState(false);
+    // Layer pan start positions
+    const layerPanStart = useRef<Record<string, { x: number; y: number }>>({});
+
+    // State
     const [baseImageSize, setBaseImageSize] = useState({ width: 0, height: 0 });
-    const [overlayImageSize, setOverlayImageSize] = useState({ width: 0, height: 0 });
-    const [baseBounds, setBaseBounds] = useState({ x: 0, y: 0, width: 0, height: 0 });
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
-    const isAdjustingRef = useRef(false);
-    const layoutRef = useRef({ width: 0, height: 0 });
+    const [layerSizes, setLayerSizes] = useState<Record<string, LayerSize>>({});
     const captureViewShotRef = useRef<ViewShot | null>(null);
 
-    const reportTransform = useCallback(
-      (payload: OverlayTransform) => {
-        onOverlayTransformChange(payload);
-      },
-      [onOverlayTransformChange],
-    );
 
-    useImperativeHandle(ref, () => ({
-      resetOverlay: () => {
-        overlayTranslateX.value = 0;
-        overlayTranslateY.value = 0;
-        overlayScale.value = 1;
-        overlayRotation.value = 0;
-        reportTransform({ x: 0, y: 0, scale: 1, rotation: 0 });
-      },
-      capture: async () => {
-        return await captureViewShotRef.current?.capture?.();
-      },
-    }));
-
-    useEffect(() => {
-      overlayTranslateX.value = overlayTransform.x;
-    }, [overlayTransform.x, overlayTranslateX]);
-
-    useEffect(() => {
-      overlayTranslateY.value = overlayTransform.y;
-    }, [overlayTransform.y, overlayTranslateY]);
-
-    useEffect(() => {
-      overlayScale.value = overlayTransform.scale;
-    }, [overlayTransform.scale, overlayScale]);
-
-    useEffect(() => {
-      overlayRotation.value = overlayTransform.rotation;
-    }, [overlayTransform.rotation, overlayRotation]);
-
-    useEffect(() => {
-      cameraScale.value = 1;
-      cameraTranslateX.value = 0;
-      cameraTranslateY.value = 0;
-      setScalePercent(100);
-    }, [baseImageUri, cameraScale, cameraTranslateX, cameraTranslateY]);
-
+    // Get base image size
     useEffect(() => {
       if (!baseImageUri) {
         setBaseImageSize({ width: 0, height: 0 });
@@ -117,23 +224,51 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
       );
     }, [baseImageUri, baseImageSizeShared]);
 
+    // Get layer sizes - load sizes for all layers that don't have sizes yet
     useEffect(() => {
-      if (!overlayImageUri) {
-        setOverlayImageSize({ width: 0, height: 0 });
-        setIsOverlayActive(false);
-        return;
-      }
-      Image.getSize(
-        overlayImageUri,
-        (width, height) => {
-          setOverlayImageSize({ width, height });
-        },
-        () => {
-          setOverlayImageSize({ width: 0, height: 0 });
-        },
-      );
-    }, [overlayImageUri]);
+      const layerIds = new Set(layers.map((l) => l.id));
+      const loadedIds = new Set(Object.keys(layerSizes));
+      const layersToLoad = layers.filter((layer) => !loadedIds.has(layer.id));
 
+      layersToLoad.forEach((layer) => {
+        // Load image size
+        Image.getSize(
+          layer.uri,
+          (width, height) => {
+            setLayerSizes((prev) => {
+              // Double check to avoid race conditions
+              if (prev[layer.id]) return prev;
+              return {
+                ...prev,
+                [layer.id]: { width, height },
+              };
+            });
+          },
+          (error) => {
+            console.warn('Failed to load layer size:', layer.uri, error);
+            setLayerSizes((prev) => {
+              if (prev[layer.id]) return prev;
+              return {
+                ...prev,
+                [layer.id]: { width: 0, height: 0 },
+              };
+            });
+          },
+        );
+      });
+
+      // Clean up sizes for removed layers
+      const idsToRemove = Array.from(loadedIds).filter((id) => !layerIds.has(id));
+      if (idsToRemove.length > 0) {
+        setLayerSizes((prev) => {
+          const next = { ...prev };
+          idsToRemove.forEach((id) => delete next[id]);
+          return next;
+        });
+      }
+    }, [layers, layerSizes]);
+
+    // Calculate base image display bounds (contain mode)
     useEffect(() => {
       const { width: containerWidthValue, height: containerHeightValue } = containerSize;
       if (!containerWidthValue || !containerHeightValue || !baseImageSize.width || !baseImageSize.height) {
@@ -154,148 +289,19 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
       const x = (containerWidthValue - width) / 2;
       const y = (containerHeightValue - height) / 2;
       const bounds = { x, y, width, height };
-      setBaseBounds(bounds);
-      baseBoundsShared.value = bounds;
-    }, [baseImageSize, containerSize, baseBoundsShared]);
+      baseDisplayBounds.value = bounds;
+    }, [baseImageSize, containerSize, baseDisplayBounds]);
 
-    const overlayDisplaySize = useMemo(() => {
-      if (!overlayImageUri || !baseBounds.width || !baseBounds.height) {
-        return { width: 0, height: 0 };
-      }
-      const aspect = overlayImageSize.width && overlayImageSize.height ? overlayImageSize.width / overlayImageSize.height : 1;
-      const maxWidth = baseBounds.width * 0.6;
-      const maxHeight = baseBounds.height * 0.6;
-      let width = maxWidth;
-      let height = width / aspect;
-      if (height > maxHeight) {
-        height = maxHeight;
-        width = height * aspect;
-      }
-      return { width, height };
-    }, [overlayImageUri, overlayImageSize, baseBounds]);
-
+    // Reset base transform when base image changes
     useEffect(() => {
-      overlayContainerSize.value = overlayDisplaySize;
-    }, [overlayDisplaySize, overlayContainerSize]);
-
-    useEffect(() => {
-      const nextScale = scalePercent / 100;
-      cameraScale.value = nextScale;
-      const { width, height } = layoutRef.current;
-      const clamp = (value: number, dimension: number) => {
-        if (nextScale <= 1) return 0;
-        const maxOffset = ((nextScale - 1) * dimension) / 2;
-        return Math.max(-maxOffset, Math.min(maxOffset, value));
-      };
-      cameraTranslateX.value = clamp(cameraTranslateX.value, width);
-      cameraTranslateY.value = clamp(cameraTranslateY.value, height);
-      if (nextScale <= 1) {
-        cameraTranslateX.value = 0;
-        cameraTranslateY.value = 0;
-      }
-    }, [scalePercent, cameraScale, cameraTranslateX, cameraTranslateY]);
-
-
-    const handleBaseImageLayout = useCallback(() => {
-      // no-op; kept for compatibility
-    }, []);
-
-    const overlayTap = Gesture.Tap()
-      .maxDistance(10)
-      .onEnd((_event, success) => {
-        if (success) {
-          runOnJS(setIsOverlayActive)(true);
-        }
-      });
-
-    const overlayPan = Gesture.Pan()
-      .onStart(() => {
-        overlayPanStartX.value = overlayTranslateX.value;
-        overlayPanStartY.value = overlayTranslateY.value;
-        runOnJS(setIsOverlayActive)(true);
-      })
-      .onUpdate((event) => {
-        const bounds = baseBoundsShared.value;
-        const overlaySize = overlayContainerSize.value;
-        const currentScale = overlayScale.value;
-
-        const overlayWidth = overlaySize.width * currentScale;
-        const overlayHeight = overlaySize.height * currentScale;
-
-        let newX = overlayPanStartX.value + event.translationX;
-        let newY = overlayPanStartY.value + event.translationY;
-
-        // Координаты относительно ViewShot (который начинается с 0,0 внутри baseBounds)
-        const halfWidth = overlayWidth / 2;
-        const halfHeight = overlayHeight / 2;
-        const baseCenterX = bounds.width / 2;
-        const baseCenterY = bounds.height / 2;
-
-        const minX = halfWidth - baseCenterX;
-        const maxX = bounds.width - halfWidth - baseCenterX;
-        const minY = halfHeight - baseCenterY;
-        const maxY = bounds.height - halfHeight - baseCenterY;
-
-        if (minX <= maxX) {
-          newX = Math.max(minX, Math.min(maxX, newX));
-        } else {
-          newX = ((minX + maxX) / 2) || 0;
-        }
-
-        if (minY <= maxY) {
-          newY = Math.max(minY, Math.min(maxY, newY));
-        } else {
-          newY = ((minY + maxY) / 2) || 0;
-        }
-
-        overlayTranslateX.value = newX;
-        overlayTranslateY.value = newY;
-      })
-      .onEnd(() => {
-        'worklet';
-        runOnJS(reportTransform)({
-          x: overlayTranslateX.value,
-          y: overlayTranslateY.value,
-          scale: overlayScale.value,
-          rotation: overlayRotation.value,
-        });
-      });
-
-    const backgroundTap = Gesture.Tap()
-      .maxDistance(10)
-      .onEnd((_event, success) => {
-        if (success) {
-          runOnJS(setIsOverlayActive)(false);
-        }
-      })
-      .requireExternalGestureToFail(overlayPan)
-      .requireExternalGestureToFail(overlayTap);
-
-    const cameraPan = Gesture.Pan()
-      .onStart(() => {
-        panStartX.value = cameraTranslateX.value;
-        panStartY.value = cameraTranslateY.value;
-      })
-      .onUpdate((event) => {
-        if (cameraScale.value <= 1) {
-          return;
-        }
-        const maxX = ((cameraScale.value - 1) * containerWidth.value) / 2;
-        const maxY = ((cameraScale.value - 1) * containerHeight.value) / 2;
-        const nextX = panStartX.value + event.translationX;
-        const nextY = panStartY.value + event.translationY;
-        cameraTranslateX.value = Math.max(-maxX, Math.min(maxX, nextX));
-        cameraTranslateY.value = Math.max(-maxY, Math.min(maxY, nextY));
-      });
-
-    const cameraStyle = useAnimatedStyle(() => ({
-      transform: [{ scale: cameraScale.value }, { translateX: cameraTranslateX.value }, { translateY: cameraTranslateY.value }],
-    }));
+      baseScale.value = 1;
+      baseTranslateX.value = 0;
+      baseTranslateY.value = 0;
+    }, [baseImageUri, baseScale, baseTranslateX, baseTranslateY]);
 
     const handleLayout = useCallback(
       (event: LayoutChangeEvent) => {
         const { width, height } = event.nativeEvent.layout;
-        layoutRef.current = { width, height };
         containerWidth.value = width;
         containerHeight.value = height;
         setContainerSize({ width, height });
@@ -303,102 +309,229 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
       [containerHeight, containerWidth],
     );
 
-    const adjustScale = (delta: number) => {
-      if (isAdjustingRef.current) return;
-      isAdjustingRef.current = true;
-      setScalePercent((prev) => Math.max(50, Math.min(300, prev + delta)));
-      setTimeout(() => {
-        isAdjustingRef.current = false;
-      }, 40);
-    };
+    // Base image pan gesture - constrained to canvas bounds
+    const basePan = Gesture.Pan()
+      .onStart(() => {
+        basePanStartX.value = baseTranslateX.value;
+        basePanStartY.value = baseTranslateY.value;
+      })
+      .onUpdate((event) => {
+        'worklet';
+        const scale = baseScale.value;
+        if (scale <= 1) {
+          baseTranslateX.value = 0;
+          baseTranslateY.value = 0;
+          return;
+        }
 
-    const overlayAnimatedStyle = useAnimatedStyle(() => {
-      const bounds = baseBoundsShared.value;
-      const overlaySize = overlayContainerSize.value;
-      const currentScale = overlayScale.value;
-      const width = overlaySize.width * currentScale;
-      const height = overlaySize.height * currentScale;
-      const left = bounds.width / 2 - width / 2 + overlayTranslateX.value;
-      const top = bounds.height / 2 - height / 2 + overlayTranslateY.value;
+        const bounds = baseDisplayBounds.value;
+        const scaledWidth = bounds.width * scale;
+        const scaledHeight = bounds.height * scale;
 
+        // Calculate max translation to keep image within canvas
+        const maxTranslateX = (scaledWidth - bounds.width) / 2;
+        const maxTranslateY = (scaledHeight - bounds.height) / 2;
+
+        const nextX = basePanStartX.value + event.translationX;
+        const nextY = basePanStartY.value + event.translationY;
+
+        baseTranslateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, nextX));
+        baseTranslateY.value = Math.max(-maxTranslateY, Math.min(maxTranslateY, nextY));
+      });
+
+    // Base image pinch gesture
+    const basePinch = Gesture.Pinch()
+      .onStart(() => {
+        basePinchStartScale.value = baseScale.value;
+      })
+      .onUpdate((event) => {
+        'worklet';
+        const newScale = Math.max(1, Math.min(3, basePinchStartScale.value * event.scale));
+        baseScale.value = newScale;
+
+        // Constrain translation when scaling
+        const bounds = baseDisplayBounds.value;
+        const scaledWidth = bounds.width * newScale;
+        const scaledHeight = bounds.height * newScale;
+
+        if (newScale <= 1) {
+          baseTranslateX.value = 0;
+          baseTranslateY.value = 0;
+        } else {
+          const maxTranslateX = (scaledWidth - bounds.width) / 2;
+          const maxTranslateY = (scaledHeight - bounds.height) / 2;
+          baseTranslateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, baseTranslateX.value));
+          baseTranslateY.value = Math.max(-maxTranslateY, Math.min(maxTranslateY, baseTranslateY.value));
+        }
+      });
+
+    // Base image tap to deselect layers
+    const baseTap = Gesture.Tap().onEnd(() => {
+      runOnJS(onSelectLayer)(null);
+    });
+
+    const baseGesture = Gesture.Simultaneous(basePan, basePinch, baseTap);
+
+    // Base image animated style
+    const baseAnimatedStyle = useAnimatedStyle(() => {
       return {
-        position: 'absolute',
-        left,
-        top,
-        width,
-        height,
-        transform: [{ rotate: `${overlayRotation.value}deg` }],
+        transform: [{ scale: baseScale.value }, { translateX: baseTranslateX.value }, { translateY: baseTranslateY.value }],
       };
     });
 
-    const overlayFullResStyle = useAnimatedStyle(() => {
-      const bounds = baseBoundsShared.value;
-      const overlaySize = overlayContainerSize.value;
-      const baseSize = baseImageSizeShared.value;
-      const currentScale = overlayScale.value;
-      if (!bounds.width || !bounds.height || !baseSize.width || !baseSize.height) {
-        return {
-          position: 'absolute',
-          width: 0,
-          height: 0,
-        };
-      }
+    // Update layer transform helper
+    const updateLayerTransform = useCallback(
+      (layerId: string, transform: Partial<LayerTransform>) => {
+        onLayersChange(
+          layers.map((layer) => (layer.id === layerId ? { ...layer, transform: { ...layer.transform, ...transform } } : layer)),
+        );
+      },
+      [layers, onLayersChange],
+    );
 
-      const scaleX = baseSize.width / bounds.width;
-      const scaleY = baseSize.height / bounds.height;
-      const width = overlaySize.width * currentScale * scaleX;
-      const height = overlaySize.height * currentScale * scaleY;
-      const left = baseSize.width / 2 - width / 2 + overlayTranslateX.value * scaleX;
-      const top = baseSize.height / 2 - height / 2 + overlayTranslateY.value * scaleY;
+    // Create layer pan gesture
+    const createLayerPan = useCallback(
+      (layer: Layer) => {
+        return Gesture.Pan()
+          .onStart(() => {
+            layerPanStart.current[layer.id] = {
+              x: layer.transform.x,
+              y: layer.transform.y,
+            };
+            runOnJS(onSelectLayer)(layer.id);
+          })
+          .onUpdate((event) => {
+            'worklet';
+            const bounds = baseDisplayBounds.value;
+            const baseScaleValue = baseScale.value;
+            const baseTranslateXValue = baseTranslateX.value;
+            const baseTranslateYValue = baseTranslateY.value;
 
-      return {
-        position: 'absolute',
-        left,
-        top,
-        width,
-        height,
-        transform: [{ rotate: `${overlayRotation.value}deg` }],
-      };
-    });
+            // Calculate actual base image bounds considering scale and translation
+            const actualBaseX = bounds.x + baseTranslateXValue;
+            const actualBaseY = bounds.y + baseTranslateYValue;
+            const actualBaseWidth = bounds.width * baseScaleValue;
+            const actualBaseHeight = bounds.height * baseScaleValue;
 
-    const containerGesture = Gesture.Simultaneous(cameraPan, backgroundTap);
-    const overlayGesture = Gesture.Simultaneous(overlayPan, overlayTap);
+            // Get layer size - need to access from closure
+            // We'll calculate constraints and pass to JS
+            const panStart = layerPanStart.current[layer.id];
+            if (!panStart) return;
 
-    const overlayMaxBoundsReady = baseBounds.width > 0 && baseBounds.height > 0 && overlayDisplaySize.width > 0 && overlayDisplaySize.height > 0;
+            const newX = panStart.x + event.translationX;
+            const newY = panStart.y + event.translationY;
+
+            // Calculate constraints in JS callback
+            runOnJS(updateLayerPosition)(layer.id, newX, newY, {
+              actualBaseX,
+              actualBaseY,
+              actualBaseWidth,
+              actualBaseHeight,
+            });
+          });
+      },
+      [baseScale, baseTranslateX, baseTranslateY, baseDisplayBounds, onSelectLayer],
+    );
+
+    // Update layer position with constraints
+    const updateLayerPosition = useCallback(
+      (
+        layerId: string,
+        newX: number,
+        newY: number,
+        baseBounds: { actualBaseX: number; actualBaseY: number; actualBaseWidth: number; actualBaseHeight: number },
+      ) => {
+        const layer = layers.find((l) => l.id === layerId);
+        if (!layer) return;
+
+        const layerSize = layerSizes[layerId];
+        if (!layerSize?.width || !layerSize?.height) return;
+
+        // Calculate layer display size (fit within 60% of base)
+        const maxWidth = baseBounds.actualBaseWidth * 0.6;
+        const maxHeight = baseBounds.actualBaseHeight * 0.6;
+        const aspect = layerSize.width / layerSize.height;
+        let layerWidth = maxWidth;
+        let layerHeight = layerWidth / aspect;
+        if (layerHeight > maxHeight) {
+          layerHeight = maxHeight;
+          layerWidth = layerHeight * aspect;
+        }
+
+        const scaledLayerWidth = layerWidth * layer.transform.scale;
+        const scaledLayerHeight = layerHeight * layer.transform.scale;
+
+        // Base center in container coordinates
+        const baseCenterX = baseBounds.actualBaseX + baseBounds.actualBaseWidth / 2;
+        const baseCenterY = baseBounds.actualBaseY + baseBounds.actualBaseHeight / 2;
+
+        // Calculate min/max positions for layer center
+        const halfWidth = scaledLayerWidth / 2;
+        const halfHeight = scaledLayerHeight / 2;
+        const minX = baseBounds.actualBaseX + halfWidth;
+        const maxX = baseBounds.actualBaseX + baseBounds.actualBaseWidth - halfWidth;
+        const minY = baseBounds.actualBaseY + halfHeight;
+        const maxY = baseBounds.actualBaseY + baseBounds.actualBaseHeight - halfHeight;
+
+        // Current layer center position
+        const currentLayerCenterX = baseCenterX + newX;
+        const currentLayerCenterY = baseCenterY + newY;
+
+        // Constrain to base bounds
+        const constrainedCenterX = Math.max(minX, Math.min(maxX, currentLayerCenterX));
+        const constrainedCenterY = Math.max(minY, Math.min(maxY, currentLayerCenterY));
+
+        // Layer position relative to base center
+        const constrainedX = constrainedCenterX - baseCenterX;
+        const constrainedY = constrainedCenterY - baseCenterY;
+
+        onLayersChange(
+          layers.map((l) => (l.id === layerId ? { ...l, transform: { ...l.transform, x: constrainedX, y: constrainedY } } : l)),
+        );
+      },
+      [layers, layerSizes, onLayersChange],
+    );
+
+    useImperativeHandle(ref, () => ({
+      capture: async () => {
+        return await captureViewShotRef.current?.capture?.();
+      },
+    }));
 
     return (
       <View style={{ width: '100%', height: '100%', position: 'relative' }} onLayout={handleLayout}>
-        <GestureDetector gesture={containerGesture}>
-          <Animated.View style={[{ width: '100%', height: '100%' }, cameraStyle]}>
-            <View style={{ width: '100%', height: '100%' }} onLayout={handleBaseImageLayout}>
-              <Image source={{ uri: baseImageUri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
-            </View>
+        <GestureDetector gesture={baseGesture}>
+          <Animated.View style={[{ width: '100%', height: '100%' }, baseAnimatedStyle]}>
+            <Image source={{ uri: baseImageUri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
 
-            {overlayImageUri && overlayMaxBoundsReady && (
-              <GestureDetector gesture={overlayGesture}>
-                <Animated.View style={[overlayAnimatedStyle]}>
-                  <Image source={{ uri: overlayImageUri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
-                  {isOverlayActive && (
-                    <View
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        borderWidth: 2,
-                        borderColor: '#007AFF',
-                        borderRadius: 4,
-                        pointerEvents: 'none',
-                      }}
-                    />
-                  )}
-                </Animated.View>
-              </GestureDetector>
-            )}
+            {layers.map((layer) => {
+              const layerSize = layerSizes[layer.id];
+              const isSelected = selectedLayerId === layer.id;
+              const layerPan = createLayerPan(layer);
+
+              // Only render layer if size is loaded
+              if (!layerSize?.width || !layerSize?.height) {
+                return null;
+              }
+
+              return (
+                <GestureDetector key={layer.id} gesture={layerPan}>
+                  <LayerDisplay
+                    layer={layer}
+                    layerSize={layerSize}
+                    selected={isSelected}
+                    baseDisplayBounds={baseDisplayBounds}
+                    baseScale={baseScale}
+                    baseTranslateX={baseTranslateX}
+                    baseTranslateY={baseTranslateY}
+                  />
+                </GestureDetector>
+              );
+            })}
           </Animated.View>
         </GestureDetector>
 
+        {/* Hidden ViewShot for capture */}
         {baseImageSize.width > 0 && baseImageSize.height > 0 && (
           <View
             style={{
@@ -425,66 +558,22 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
             >
               <View style={{ width: baseImageSize.width, height: baseImageSize.height }}>
                 <Image source={{ uri: baseImageUri }} style={{ width: baseImageSize.width, height: baseImageSize.height }} resizeMode='contain' />
-                {overlayImageUri && overlayDisplaySize.width > 0 && (
-                  <Animated.View style={[overlayFullResStyle]}>
-                    <Image source={{ uri: overlayImageUri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
-                  </Animated.View>
-                )}
+                {layers.map((layer) => {
+                  const layerSize = layerSizes[layer.id];
+                  return (
+                    <LayerCapture
+                      key={layer.id}
+                      layer={layer}
+                      layerSize={layerSize}
+                      baseImageSizeShared={baseImageSizeShared}
+                      baseDisplayBounds={baseDisplayBounds}
+                    />
+                  );
+                })}
               </View>
             </ViewShot>
           </View>
         )}
-
-          <View
-            style={{
-              position: 'absolute',
-              right: 10,
-              bottom: 10,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-              backgroundColor: 'rgba(0,0,0,0.35)',
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              borderRadius: 12,
-            }}
-          >
-            <Pressable
-              onPress={() => adjustScale(-10)}
-              style={({ pressed }) => [
-                {
-                  width: 28,
-                  height: 28,
-                  borderRadius: 14,
-                  backgroundColor: 'rgba(255,255,255,0.12)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transform: [{ scale: pressed ? 0.95 : 1 }],
-                  opacity: pressed ? 0.85 : 1,
-                },
-              ]}
-            >
-              <Text style={{ color: 'rgba(229,231,235,0.9)', fontSize: 18 }}>−</Text>
-            </Pressable>
-            <Text style={{ color: 'rgba(229,231,235,0.8)', fontSize: 14, minWidth: 48, textAlign: 'center' }}>{scalePercent}%</Text>
-            <Pressable
-              onPress={() => adjustScale(10)}
-              style={({ pressed }) => [
-                {
-                  width: 28,
-                  height: 28,
-                  borderRadius: 14,
-                  backgroundColor: 'rgba(255,255,255,0.12)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transform: [{ scale: pressed ? 0.95 : 1 }],
-                  opacity: pressed ? 0.85 : 1,
-                },
-              ]}
-            >
-              <Text style={{ color: 'rgba(229,231,235,0.9)', fontSize: 18 }}>+</Text>
-            </Pressable>
-          </View>
       </View>
     );
   },
@@ -492,4 +581,3 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
 ImageCanvas.displayName = 'ImageCanvas';
 
 export default ImageCanvas;
-

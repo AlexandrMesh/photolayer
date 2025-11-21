@@ -54,6 +54,10 @@ type Translations = {
   noUpdateAvailable: string;
   currentVersion: string;
   checkForUpdatesBelow: string;
+  layers: string;
+  layer: string;
+  noLayers: string;
+  addLayerHint: string;
 };
 
 type I18nContextType = {

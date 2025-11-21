@@ -44,4 +44,8 @@ export default {
   noUpdateAvailable: 'У вас последняя версия',
   currentVersion: 'Текущая версия',
   checkForUpdatesBelow: 'Проверьте обновления ниже',
+  layers: 'Слои',
+  layer: 'Слой',
+  noLayers: 'Нет слоев',
+  addLayerHint: 'Нажмите + чтобы добавить слой',
 };

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
@@ -8,9 +8,9 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 
-import ControlsPanel from '../components/ControlsPanel';
 import Header from '../components/Header';
-import ImageCanvas, { ImageCanvasHandle, type OverlayTransform } from '../components/ImageCanvas';
+import ImageCanvas, { ImageCanvasHandle, type Layer, type LayerTransform } from '../components/ImageCanvas';
+import LayersBottomSheet from '../components/LayersBottomSheet';
 import PickingPlaceholder from '../components/PickingPlaceholder';
 import ReviewPrompt from '../components/ReviewPrompt';
 import { useI18n } from '../contexts/I18nContext';
@@ -19,10 +19,11 @@ import { checkAndMaybeUpdate } from '../utils/inAppUpdate';
 
 const Index = () => {
   const [baseImageUri, setBaseImageUri] = useState<string | null>(null);
-  const [overlayImageUri, setOverlayImageUri] = useState<string | null>(null);
-  const [overlayTransform, setOverlayTransform] = useState<OverlayTransform>({ x: 0, y: 0, scale: 1, rotation: 0 });
+  const [layers, setLayers] = useState<Layer[]>([]);
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
   const [picking, setPicking] = useState<boolean>(false);
+  const [layersSheetVisible, setLayersSheetVisible] = useState(false);
   const imageCanvasRef = useRef<ImageCanvasHandle | null>(null);
   const { t } = useI18n();
   const { theme } = useTheme();
@@ -50,15 +51,15 @@ const Index = () => {
       });
       if (!result.canceled) {
         setBaseImageUri(result.assets[0].uri);
-        setOverlayImageUri(null);
-        setOverlayTransform({ x: 0, y: 0, scale: 1, rotation: 0 });
+        setLayers([]);
+        setSelectedLayerId(null);
       }
     } finally {
       setPicking(false);
     }
   };
 
-  const pickOverlayImage = async () => {
+  const pickLayerImage = async () => {
     if (!baseImageUri || picking) {
       if (!baseImageUri) {
         Toast.show({
@@ -80,33 +81,39 @@ const Index = () => {
       });
 
       if (!result.canceled) {
-        setOverlayImageUri(result.assets[0].uri);
-        setOverlayTransform({ x: 0, y: 0, scale: 1, rotation: 0 });
-        imageCanvasRef.current?.resetOverlay();
+        const newLayer: Layer = {
+          id: `layer-${Date.now()}-${Math.random()}`,
+          uri: result.assets[0].uri,
+          transform: { x: 0, y: 0, scale: 1, rotation: 0 },
+        };
+        setLayers((prev) => [...prev, newLayer]);
+        setSelectedLayerId(newLayer.id);
+        setLayersSheetVisible(true);
       }
     } finally {
       setPicking(false);
     }
   };
 
-  const handleOverlayTransformChange = useCallback((next: OverlayTransform) => {
-    setOverlayTransform(next);
+  const handleLayersChange = useCallback((newLayers: Layer[]) => {
+    setLayers(newLayers);
   }, []);
 
-  const handleRotateOverlay = (delta: number) => {
-    setOverlayTransform((prev) => ({
-      ...prev,
-      rotation: prev.rotation + delta,
-    }));
-  };
+  const handleUpdateLayerTransform = useCallback(
+    (layerId: string, transform: Partial<LayerTransform>) => {
+      setLayers((prev) =>
+        prev.map((layer) => (layer.id === layerId ? { ...layer, transform: { ...layer.transform, ...transform } } : layer)),
+      );
+    },
+    [],
+  );
 
-  const handleResetOverlay = () => {
-    if (imageCanvasRef.current) {
-      imageCanvasRef.current.resetOverlay();
-    } else {
-      setOverlayTransform({ x: 0, y: 0, scale: 1, rotation: 0 });
+  const handleRemoveLayer = useCallback((layerId: string) => {
+    setLayers((prev) => prev.filter((layer) => layer.id !== layerId));
+    if (selectedLayerId === layerId) {
+      setSelectedLayerId(null);
     }
-  };
+  }, [selectedLayerId]);
 
   const saveImage = async () => {
     if (!baseImageUri || saving) return;
@@ -153,30 +160,71 @@ const Index = () => {
           }}
         >
           {baseImageUri ? (
-            <ImageCanvas ref={imageCanvasRef} baseImageUri={baseImageUri} overlayImageUri={overlayImageUri} overlayTransform={overlayTransform} onOverlayTransformChange={handleOverlayTransformChange} />
+            <ImageCanvas
+              ref={imageCanvasRef}
+              baseImageUri={baseImageUri}
+              layers={layers}
+              onLayersChange={handleLayersChange}
+              selectedLayerId={selectedLayerId}
+              onSelectLayer={setSelectedLayerId}
+            />
           ) : (
             <PickingPlaceholder picking={picking} onPick={pickBaseImage} />
           )}
         </View>
 
         {baseImageUri && (
-          <ControlsPanel
-            hasBaseImage={!!baseImageUri}
-            hasOverlayImage={!!overlayImageUri}
-            overlayRotation={overlayTransform.rotation}
-            onPickBase={pickBaseImage}
-            onPickOverlay={pickOverlayImage}
-            onRemoveOverlay={() => {
-              setOverlayImageUri(null);
-              setOverlayTransform({ x: 0, y: 0, scale: 1, rotation: 0 });
-            }}
-            onResetOverlay={handleResetOverlay}
-            onRotateOverlay={handleRotateOverlay}
-            saving={saving}
-            onSave={saveImage}
-          />
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <Pressable
+              onPress={() => setLayersSheetVisible(true)}
+              style={({ pressed }) => [
+                {
+                  flex: 1,
+                  paddingVertical: 16,
+                  paddingHorizontal: 20,
+                  borderRadius: 12,
+                  backgroundColor: theme.primary,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+            >
+              <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{t('layers')}</Text>
+            </Pressable>
+            <Pressable
+              onPress={saveImage}
+              disabled={saving}
+              style={({ pressed }) => [
+                {
+                  flex: 1,
+                  paddingVertical: 16,
+                  paddingHorizontal: 20,
+                  borderRadius: 12,
+                  backgroundColor: saving ? theme.button : theme.primary,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+            >
+              <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{saving ? t('saving') : t('save')}</Text>
+            </Pressable>
+          </View>
         )}
       </View>
+
+      <LayersBottomSheet
+        visible={layersSheetVisible}
+        layers={layers}
+        selectedLayerId={selectedLayerId}
+        onSelectLayer={setSelectedLayerId}
+        onRemoveLayer={handleRemoveLayer}
+        onUpdateLayerTransform={handleUpdateLayerTransform}
+        onClose={() => setLayersSheetVisible(false)}
+        onAddLayer={pickLayerImage}
+      />
+
       <Toast />
       <ReviewPrompt />
     </SafeAreaView>
