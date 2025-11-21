@@ -193,7 +193,7 @@ const LayersBottomSheet = ({
 
           {/* Layers List */}
           <FlatList
-            data={layers}
+            data={[...layers].reverse()}
             keyExtractor={(item) => item.id}
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingBottom: 16 }}
@@ -222,7 +222,7 @@ const LayersBottomSheet = ({
                   <Image source={{ uri: layer.uri }} style={{ width: 50, height: 50, borderRadius: 8 }} resizeMode='cover' />
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>
-                      {t('layer')} {layers.indexOf(layer) + 1}
+                      {t('layer')} {layers.length - layers.indexOf(layer)}
                     </Text>
                     <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>
                       {Math.round(layer.transform.rotation)}° • {Math.round(layer.transform.scale * 100)}%
