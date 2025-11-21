@@ -42,12 +42,10 @@ type LayerDisplayProps = {
   selected: boolean;
   baseDisplayBounds: SharedValue<Bounds>;
   baseScale: SharedValue<number>;
-  baseTranslateX: SharedValue<number>;
-  baseTranslateY: SharedValue<number>;
   gesture?: ReturnType<typeof Gesture.Simultaneous>;
 };
 
-const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, baseScale, baseTranslateX, baseTranslateY, gesture }: LayerDisplayProps) => {
+const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, baseScale, gesture }: LayerDisplayProps) => {
   const animatedStyle = useAnimatedStyle(() => {
     if (!layerSize?.width || !layerSize?.height) {
       return { position: 'absolute', width: 0, height: 0, opacity: 0 };
@@ -55,31 +53,29 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, baseScale
 
     const bounds = baseDisplayBounds.value;
     const baseScaleValue = baseScale.value;
-    const baseTranslateXValue = baseTranslateX.value;
-    const baseTranslateYValue = baseTranslateY.value;
 
-    const actualBaseX = bounds.x + baseTranslateXValue;
-    const actualBaseY = bounds.y + baseTranslateYValue;
-    const actualBaseWidth = bounds.width * baseScaleValue;
-    const actualBaseHeight = bounds.height * baseScaleValue;
+    // Base center in container (remains constant at bounds.x + bounds.width/2)
+    // This is the center point around which scaling happens
+    const baseCenterX = bounds.x + bounds.width / 2;
+    const baseCenterY = bounds.y + bounds.height / 2;
 
-    const maxWidth = actualBaseWidth * 0.6;
-    const maxHeight = actualBaseHeight * 0.6;
+    // Calculate layer size at scale 1 first, then scale with baseScaleValue
+    const maxWidthAtScale1 = bounds.width * 0.6;
+    const maxHeightAtScale1 = bounds.height * 0.6;
     const aspect = layerSize.width / layerSize.height;
-    let layerWidth = maxWidth;
-    let layerHeight = layerWidth / aspect;
-    if (layerHeight > maxHeight) {
-      layerHeight = maxHeight;
-      layerWidth = layerHeight * aspect;
+    let layerWidthAtScale1 = maxWidthAtScale1;
+    let layerHeightAtScale1 = layerWidthAtScale1 / aspect;
+    if (layerHeightAtScale1 > maxHeightAtScale1) {
+      layerHeightAtScale1 = maxHeightAtScale1;
+      layerWidthAtScale1 = layerHeightAtScale1 * aspect;
     }
 
-    const scaledWidth = layerWidth * layer.transform.scale;
-    const scaledHeight = layerHeight * layer.transform.scale;
+    // Scale layer size with base scale
+    const scaledWidth = layerWidthAtScale1 * layer.transform.scale * baseScaleValue;
+    const scaledHeight = layerHeightAtScale1 * layer.transform.scale * baseScaleValue;
 
-    const baseCenterX = actualBaseX + actualBaseWidth / 2;
-    const baseCenterY = actualBaseY + actualBaseHeight / 2;
-
-    // Scale layer position with base scale to keep everything together
+    // Layer position: stored at scale 1, so we scale it with baseScaleValue
+    // Position is relative to base center, scaled proportionally with base image
     const left = baseCenterX - scaledWidth / 2 + layer.transform.x * baseScaleValue;
     const top = baseCenterY - scaledHeight / 2 + layer.transform.y * baseScaleValue;
 
@@ -615,8 +611,6 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
             selected={isSelected}
             baseDisplayBounds={baseDisplayBounds}
             baseScale={baseScale}
-            baseTranslateX={baseTranslateX}
-            baseTranslateY={baseTranslateY}
             gesture={layerGesture}
           />
         );
