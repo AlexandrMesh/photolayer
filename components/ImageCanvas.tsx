@@ -596,7 +596,18 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
     })
     .onEnd(() => {
       'worklet';
-      runOnJS(setScalePercent)(Math.round(baseScale.value * 100));
+      const currentScale = baseScale.value;
+      const scalePercent = Math.round(currentScale * 100);
+
+      // Snap to 100% if close to it (within 5% threshold)
+      if (Math.abs(currentScale - 1.0) < 0.05) {
+        baseScale.value = withTiming(1.0, { duration: 200 });
+        baseTranslateX.value = withTiming(0, { duration: 200 });
+        baseTranslateY.value = withTiming(0, { duration: 200 });
+        runOnJS(setScalePercent)(100);
+      } else {
+        runOnJS(setScalePercent)(scalePercent);
+      }
     });
 
   // Base image tap to deselect layers - only if not tapping on a layer
