@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
-import { Image, View, type LayoutChangeEvent } from 'react-native';
+import { Image, Pressable, Text, View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import ViewShot from 'react-native-view-shot';
@@ -84,8 +84,9 @@ const LayerDisplay = ({
     const baseCenterX = actualBaseX + actualBaseWidth / 2;
     const baseCenterY = actualBaseY + actualBaseHeight / 2;
 
-    const left = baseCenterX - scaledWidth / 2 + layer.transform.x;
-    const top = baseCenterY - scaledHeight / 2 + layer.transform.y;
+    // Scale layer position with base scale to keep everything together
+    const left = baseCenterX - scaledWidth / 2 + layer.transform.x * baseScaleValue;
+    const top = baseCenterY - scaledHeight / 2 + layer.transform.y * baseScaleValue;
 
     return {
       position: 'absolute',
@@ -200,6 +201,8 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
     const [baseImageSize, setBaseImageSize] = useState({ width: 0, height: 0 });
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
     const [layerSizes, setLayerSizes] = useState<Record<string, LayerSize>>({});
+    const [scalePercent, setScalePercent] = useState(100);
+    const isAdjustingRef = useRef(false);
     const captureViewShotRef = useRef<ViewShot | null>(null);
 
 
@@ -297,7 +300,43 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
       baseScale.value = 1;
       baseTranslateX.value = 0;
       baseTranslateY.value = 0;
+      setScalePercent(100);
     }, [baseImageUri, baseScale, baseTranslateX, baseTranslateY]);
+
+    // Sync scale percent with baseScale when pinch gesture ends
+    // Note: We'll update scalePercent in adjustScale and basePinch.onEnd
+
+    // Adjust scale with buttons
+    const adjustScale = useCallback(
+      (delta: number) => {
+        if (isAdjustingRef.current) return;
+        isAdjustingRef.current = true;
+        const newPercent = Math.max(50, Math.min(300, scalePercent + delta));
+        setScalePercent(newPercent);
+        const newScale = newPercent / 100;
+        baseScale.value = newScale;
+
+        // Constrain translation when scaling
+        const bounds = baseDisplayBounds.value;
+        const scaledWidth = bounds.width * newScale;
+        const scaledHeight = bounds.height * newScale;
+
+        if (newScale <= 1) {
+          baseTranslateX.value = 0;
+          baseTranslateY.value = 0;
+        } else {
+          const maxTranslateX = (scaledWidth - bounds.width) / 2;
+          const maxTranslateY = (scaledHeight - bounds.height) / 2;
+          baseTranslateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, baseTranslateX.value));
+          baseTranslateY.value = Math.max(-maxTranslateY, Math.min(maxTranslateY, baseTranslateY.value));
+        }
+
+        setTimeout(() => {
+          isAdjustingRef.current = false;
+        }, 50);
+      },
+      [scalePercent, baseScale, baseTranslateX, baseTranslateY, baseDisplayBounds],
+    );
 
     const handleLayout = useCallback(
       (event: LayoutChangeEvent) => {
@@ -363,6 +402,10 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
           baseTranslateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, baseTranslateX.value));
           baseTranslateY.value = Math.max(-maxTranslateY, Math.min(maxTranslateY, baseTranslateY.value));
         }
+      })
+      .onEnd(() => {
+        'worklet';
+        runOnJS(setScalePercent)(Math.round(baseScale.value * 100));
       });
 
     // Base image tap to deselect layers
@@ -394,9 +437,11 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
       (layer: Layer) => {
         return Gesture.Pan()
           .onStart(() => {
+            // Store position in screen coordinates (scale-1 coordinates * current scale)
+            const baseScaleValue = baseScale.value;
             layerPanStart.current[layer.id] = {
-              x: layer.transform.x,
-              y: layer.transform.y,
+              x: layer.transform.x * baseScaleValue,
+              y: layer.transform.y * baseScaleValue,
             };
             runOnJS(onSelectLayer)(layer.id);
           })
@@ -418,11 +463,13 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
             const panStart = layerPanStart.current[layer.id];
             if (!panStart) return;
 
+            // Calculate new position in screen coordinates
             const newX = panStart.x + event.translationX;
             const newY = panStart.y + event.translationY;
 
             // Calculate constraints in JS callback
-            runOnJS(updateLayerPosition)(layer.id, newX, newY, {
+            // Pass baseScaleValue to convert screen coordinates to scale-1 coordinates
+            runOnJS(updateLayerPosition)(layer.id, newX, newY, baseScaleValue, {
               actualBaseX,
               actualBaseY,
               actualBaseWidth,
@@ -439,6 +486,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
         layerId: string,
         newX: number,
         newY: number,
+        baseScaleValue: number,
         baseBounds: { actualBaseX: number; actualBaseY: number; actualBaseWidth: number; actualBaseHeight: number },
       ) => {
         const layer = layers.find((l) => l.id === layerId);
@@ -473,7 +521,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
         const minY = baseBounds.actualBaseY + halfHeight;
         const maxY = baseBounds.actualBaseY + baseBounds.actualBaseHeight - halfHeight;
 
-        // Current layer center position
+        // Current layer center position in screen coordinates
         const currentLayerCenterX = baseCenterX + newX;
         const currentLayerCenterY = baseCenterY + newY;
 
@@ -481,9 +529,14 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
         const constrainedCenterX = Math.max(minX, Math.min(maxX, currentLayerCenterX));
         const constrainedCenterY = Math.max(minY, Math.min(maxY, currentLayerCenterY));
 
-        // Layer position relative to base center
-        const constrainedX = constrainedCenterX - baseCenterX;
-        const constrainedY = constrainedCenterY - baseCenterY;
+        // Layer position relative to base center in screen coordinates
+        const constrainedXScreen = constrainedCenterX - baseCenterX;
+        const constrainedYScreen = constrainedCenterY - baseCenterY;
+
+        // Convert to scale-1 coordinates for storage
+        // This ensures positions are stored at base scale 1, and will be scaled on display
+        const constrainedX = constrainedXScreen / baseScaleValue;
+        const constrainedY = constrainedYScreen / baseScaleValue;
 
         onLayersChange(
           layers.map((l) => (l.id === layerId ? { ...l, transform: { ...l.transform, x: constrainedX, y: constrainedY } } : l)),
@@ -574,6 +627,58 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
             </ViewShot>
           </View>
         )}
+
+        {/* Scale controls */}
+        <View
+          style={{
+            position: 'absolute',
+            right: 10,
+            bottom: 10,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            backgroundColor: 'rgba(0,0,0,0.35)',
+            paddingHorizontal: 10,
+            paddingVertical: 8,
+            borderRadius: 12,
+          }}
+        >
+          <Pressable
+            onPress={() => adjustScale(-10)}
+            style={({ pressed }) => [
+              {
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                backgroundColor: 'rgba(255,255,255,0.12)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transform: [{ scale: pressed ? 0.95 : 1 }],
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+          >
+            <Text style={{ color: 'rgba(229,231,235,0.9)', fontSize: 18 }}>−</Text>
+          </Pressable>
+          <Text style={{ color: 'rgba(229,231,235,0.8)', fontSize: 14, minWidth: 48, textAlign: 'center' }}>{scalePercent}%</Text>
+          <Pressable
+            onPress={() => adjustScale(10)}
+            style={({ pressed }) => [
+              {
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                backgroundColor: 'rgba(255,255,255,0.12)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transform: [{ scale: pressed ? 0.95 : 1 }],
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+          >
+            <Text style={{ color: 'rgba(229,231,235,0.9)', fontSize: 18 }}>+</Text>
+          </Pressable>
+        </View>
       </View>
     );
   },
