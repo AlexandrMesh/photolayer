@@ -3,7 +3,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { Image, Pressable, Text, View, type LayoutChangeEvent } from 'react-native';
 
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import ViewShot from 'react-native-view-shot';
 
 import type { SharedValue } from 'react-native-reanimated';
@@ -536,36 +536,43 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
     .onUpdate((event) => {
       'worklet';
       const scale = baseScale.value;
-      if (scale <= 1) {
-        baseTranslateX.value = 0;
-        baseTranslateY.value = 0;
-        return;
-      }
-
       const bounds = baseDisplayBounds.value;
       const scaledWidth = bounds.width * scale;
       const scaledHeight = bounds.height * scale;
 
-      // Calculate max translation to keep image within canvas
-      const maxTranslateX = (scaledWidth - bounds.width) / 2;
-      const maxTranslateY = (scaledHeight - bounds.height) / 2;
+      if (scale <= 1) {
+        // When scale is 1 or less, allow movement within canvas bounds
+        // Calculate how much the image can move (it's smaller than canvas)
+        const maxTranslateX = (bounds.width - scaledWidth) / 2;
+        const maxTranslateY = (bounds.height - scaledHeight) / 2;
 
-      const nextX = basePanStartX.value + event.translationX;
-      const nextY = basePanStartY.value + event.translationY;
+        const nextX = basePanStartX.value + event.translationX;
+        const nextY = basePanStartY.value + event.translationY;
 
-      baseTranslateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, nextX));
-      baseTranslateY.value = Math.max(-maxTranslateY, Math.min(maxTranslateY, nextY));
+        baseTranslateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, nextX));
+        baseTranslateY.value = Math.max(-maxTranslateY, Math.min(maxTranslateY, nextY));
+      } else {
+        // When scale > 1, keep image within canvas bounds
+        const maxTranslateX = (scaledWidth - bounds.width) / 2;
+        const maxTranslateY = (scaledHeight - bounds.height) / 2;
+
+        const nextX = basePanStartX.value + event.translationX;
+        const nextY = basePanStartY.value + event.translationY;
+
+        baseTranslateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, nextX));
+        baseTranslateY.value = Math.max(-maxTranslateY, Math.min(maxTranslateY, nextY));
+      }
     })
     .withTestId('basePan');
 
-  // Base image pinch gesture
+  // Base image pinch gesture - allow scale from 50% to 300%
   const basePinch = Gesture.Pinch()
     .onStart(() => {
       basePinchStartScale.value = baseScale.value;
     })
     .onUpdate((event) => {
       'worklet';
-      const newScale = Math.max(1, Math.min(3, basePinchStartScale.value * event.scale));
+      const newScale = Math.max(0.5, Math.min(3, basePinchStartScale.value * event.scale));
       baseScale.value = newScale;
 
       // Constrain translation when scaling
@@ -574,9 +581,13 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
       const scaledHeight = bounds.height * newScale;
 
       if (newScale <= 1) {
-        baseTranslateX.value = 0;
-        baseTranslateY.value = 0;
+        // When scale is 1 or less, constrain to keep image within canvas
+        const maxTranslateX = (bounds.width - scaledWidth) / 2;
+        const maxTranslateY = (bounds.height - scaledHeight) / 2;
+        baseTranslateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, baseTranslateX.value));
+        baseTranslateY.value = Math.max(-maxTranslateY, Math.min(maxTranslateY, baseTranslateY.value));
       } else {
+        // When scale > 1, keep image within canvas bounds
         const maxTranslateX = (scaledWidth - bounds.width) / 2;
         const maxTranslateY = (scaledHeight - bounds.height) / 2;
         baseTranslateX.value = Math.max(-maxTranslateX, Math.min(maxTranslateX, baseTranslateX.value));
@@ -589,16 +600,30 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
     });
 
   // Base image tap to deselect layers - only if not tapping on a layer
+  // Double tap to reset scale to 100%
   const baseTap = Gesture.Tap()
     .maxDistance(10)
+    .numberOfTaps(1)
     .onEnd(() => {
       'worklet';
       // Only deselect if no layer gesture is active
       runOnJS(onSelectLayer)(null);
     });
 
+  const baseDoubleTap = Gesture.Tap()
+    .maxDistance(10)
+    .numberOfTaps(2)
+    .onEnd(() => {
+      'worklet';
+      // Reset scale to 100% and center the image
+      baseScale.value = withTiming(1, { duration: 200 });
+      baseTranslateX.value = withTiming(0, { duration: 200 });
+      baseTranslateY.value = withTiming(0, { duration: 200 });
+      runOnJS(setScalePercent)(100);
+    });
+
   // Base gesture should not interfere with layer gestures
-  const baseGesture = Gesture.Simultaneous(basePan, basePinch, baseTap);
+  const baseGesture = Gesture.Simultaneous(basePan, basePinch, baseTap, baseDoubleTap);
 
   // Base image animated style
   const baseAnimatedStyle = useAnimatedStyle(() => {
