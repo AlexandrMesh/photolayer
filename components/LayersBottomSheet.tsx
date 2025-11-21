@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 
-import { FlatList, Image, Pressable, Text, View } from 'react-native';
+import { BackHandler, FlatList, Image, Pressable, Text, View } from 'react-native';
 
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -50,6 +50,18 @@ const LayersBottomSheet = ({
     }
   }, [visible, translateY, opacity]);
 
+  // Handle Android back button
+  useEffect(() => {
+    if (!visible) return;
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeSheet();
+      return true; // Prevent default behavior
+    });
+
+    return () => backHandler.remove();
+  }, [visible, closeSheet]);
+
   const sheetStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
   }));
@@ -58,7 +70,17 @@ const LayersBottomSheet = ({
     opacity: opacity.value,
   }));
 
+  const closeSheet = useCallback(() => {
+    translateY.value = withTiming(400, { duration: 250 });
+    opacity.value = withTiming(0, { duration: 200 });
+    // Call onClose after animation completes
+    setTimeout(() => {
+      onClose();
+    }, 250);
+  }, [translateY, opacity, onClose]);
+
   const panGesture = Gesture.Pan()
+    .activeOffsetY(10) // Only activate when dragging down
     .onUpdate((event) => {
       if (event.translationY > 0) {
         translateY.value = event.translationY;
@@ -116,36 +138,37 @@ const LayersBottomSheet = ({
           backdropStyle,
         ]}
       >
-        <Pressable style={{ flex: 1 }} onPress={onClose} />
+        <Pressable style={{ flex: 1 }} onPress={closeSheet} />
       </Animated.View>
 
-      <GestureDetector gesture={panGesture}>
-        <Animated.View
-          style={[
-            {
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              backgroundColor: theme.surface,
-              borderTopLeftRadius: 20,
-              borderTopRightRadius: 20,
-              maxHeight: '80%',
-              paddingBottom: insets.bottom,
-              zIndex: 1001,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: -2 },
-              shadowOpacity: 0.25,
-              shadowRadius: 8,
-              elevation: 8,
-            },
-            sheetStyle,
-          ]}
-        >
-          {/* Handle */}
+      <Animated.View
+        style={[
+          {
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            backgroundColor: theme.surface,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            maxHeight: '50%',
+            paddingBottom: insets.bottom,
+            zIndex: 1001,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.25,
+            shadowRadius: 8,
+            elevation: 8,
+          },
+          sheetStyle,
+        ]}
+      >
+        {/* Handle - this area is for dragging */}
+        <GestureDetector gesture={panGesture}>
           <View style={{ alignItems: 'center', paddingVertical: 12 }}>
             <View style={{ width: 40, height: 4, backgroundColor: theme.border, borderRadius: 2 }} />
           </View>
+        </GestureDetector>
 
           {/* Header */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 }}>
@@ -172,6 +195,10 @@ const LayersBottomSheet = ({
           <FlatList
             data={layers}
             keyExtractor={(item) => item.id}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 16 }}
+            nestedScrollEnabled={true}
+            scrollEnabled={true}
             renderItem={({ item: layer }) => {
               const isSelected = selectedLayerId === layer.id;
               return (
@@ -296,10 +323,8 @@ const LayersBottomSheet = ({
                 <Text style={{ color: theme.textSecondary, fontSize: 14, marginTop: 4, textAlign: 'center' }}>{t('addLayerHint')}</Text>
               </View>
             }
-            style={{ maxHeight: 400 }}
           />
         </Animated.View>
-      </GestureDetector>
     </>
   );
 };
