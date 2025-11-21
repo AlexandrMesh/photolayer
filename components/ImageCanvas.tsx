@@ -36,6 +36,118 @@ export type ImageCanvasHandle = {
   capture: () => Promise<string | undefined>;
 };
 
+type LayerDarkeningOverlayProps = {
+  layer: Layer;
+  layerSize?: LayerSize;
+  baseDisplayBounds: SharedValue<Bounds>;
+};
+
+const LayerDarkeningOverlay = ({ layer, layerSize, baseDisplayBounds }: LayerDarkeningOverlayProps) => {
+  // Calculate overlays synchronously for rendering
+  const bounds = baseDisplayBounds.value;
+  if (!layerSize?.width || !layerSize?.height || !bounds.width || !bounds.height) {
+    return null;
+  }
+
+  const maxWidthAtBaseScale1 = bounds.width * 0.6;
+  const maxHeightAtBaseScale1 = bounds.height * 0.6;
+  const aspect = layerSize.width / layerSize.height;
+  let layerWidthAtBaseScale1 = maxWidthAtBaseScale1;
+  let layerHeightAtBaseScale1 = layerWidthAtBaseScale1 / aspect;
+  if (layerHeightAtBaseScale1 > maxHeightAtBaseScale1) {
+    layerHeightAtBaseScale1 = maxHeightAtBaseScale1;
+    layerWidthAtBaseScale1 = layerHeightAtBaseScale1 * aspect;
+  }
+
+  const layerWidth = layerWidthAtBaseScale1 * layer.transform.scale;
+  const layerHeight = layerHeightAtBaseScale1 * layer.transform.scale;
+
+  const baseCenterX = bounds.x + bounds.width / 2;
+  const baseCenterY = bounds.y + bounds.height / 2;
+  const offsetX = layer.transform.x;
+  const offsetY = layer.transform.y;
+
+  const layerLeft = baseCenterX + offsetX - layerWidth / 2;
+  const layerTop = baseCenterY + offsetY - layerHeight / 2;
+  const layerRight = layerLeft + layerWidth;
+  const layerBottom = layerTop + layerHeight;
+
+  // Base image bounds
+  const baseLeft = bounds.x;
+  const baseTop = bounds.y;
+  const baseRight = bounds.x + bounds.width;
+  const baseBottom = bounds.y + bounds.height;
+
+  const overlays: Array<{ top: number; left: number; width: number; height: number }> = [];
+
+  // Top overlay (if layer extends above base)
+  if (layerTop < baseTop) {
+    overlays.push({
+      top: 0,
+      left: 0,
+      width: layerWidth,
+      height: baseTop - layerTop,
+    });
+  }
+
+  // Bottom overlay (if layer extends below base)
+  if (layerBottom > baseBottom) {
+    overlays.push({
+      top: baseBottom - layerTop,
+      left: 0,
+      width: layerWidth,
+      height: layerBottom - baseBottom,
+    });
+  }
+
+  // Left overlay (if layer extends left of base)
+  if (layerLeft < baseLeft) {
+    const overlayTop = Math.max(0, baseTop - layerTop);
+    const overlayBottom = Math.min(layerHeight, baseBottom - layerTop);
+    overlays.push({
+      top: overlayTop,
+      left: 0,
+      width: baseLeft - layerLeft,
+      height: overlayBottom - overlayTop,
+    });
+  }
+
+  // Right overlay (if layer extends right of base)
+  if (layerRight > baseRight) {
+    const overlayTop = Math.max(0, baseTop - layerTop);
+    const overlayBottom = Math.min(layerHeight, baseBottom - layerTop);
+    overlays.push({
+      top: overlayTop,
+      left: baseRight - layerLeft,
+      width: layerRight - baseRight,
+      height: overlayBottom - overlayTop,
+    });
+  }
+
+  if (overlays.length === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      {overlays.map((overlay, index) => (
+        <View
+          key={index}
+          style={{
+            position: 'absolute',
+            top: overlay.top,
+            left: overlay.left,
+            width: overlay.width,
+            height: overlay.height,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            pointerEvents: 'none',
+          }}
+        />
+      ))}
+    </>
+  );
+};
+
 type LayerDisplayProps = {
   layer: Layer;
   layerSize?: LayerSize;
@@ -102,6 +214,10 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture }
         <GestureDetector gesture={gesture}>
           <View style={{ width: '100%', height: '100%' }} collapsable={false}>
             <Image source={{ uri: layer.uri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
+
+            {/* Darkening overlays for parts outside base image */}
+            <LayerDarkeningOverlay layer={layer} layerSize={layerSize} baseDisplayBounds={baseDisplayBounds} />
+
             {selected && (
               <View
                 style={{
@@ -122,6 +238,10 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture }
       ) : (
         <View style={{ width: '100%', height: '100%' }} collapsable={false}>
           <Image source={{ uri: layer.uri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
+
+          {/* Darkening overlays for parts outside base image */}
+          <LayerDarkeningOverlay layer={layer} layerSize={layerSize} baseDisplayBounds={baseDisplayBounds} />
+
           {selected && (
             <View
               style={{
@@ -565,10 +685,6 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
       height = containerSize.height;
       width = height * imageRatio;
     }
-    const x = (containerSize.width - width) / 2;
-    const y = (containerSize.height - height) / 2;
-    const boundsAtScale1 = { x, y, width, height };
-
     // Clean up removed layers from ref
     const currentLayerIds = new Set(layers.map((l) => l.id));
     Object.keys(prevLayerTransformsRef.current).forEach((id) => {
@@ -602,11 +718,8 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
       // Update previous transform
       prevLayerTransformsRef.current[layer.id] = { rotation: currentRotation, scale: currentScale };
 
-      // Constrain position
-      const constrained = constrainLayerPosition(layer, layerSize, boundsAtScale1);
-      if (constrained.x !== layer.transform.x || constrained.y !== layer.transform.y) {
-        return { ...layer, transform: { ...layer.transform, x: constrained.x, y: constrained.y } };
-      }
+      // Don't constrain position - allow layers to move outside base image bounds
+      // Position will be constrained visually with darkening overlay
       return layer;
     });
 
@@ -647,48 +760,10 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
         layerWidthAtScale1 = layerHeightAtScale1 * aspect;
       }
 
-      const scaledLayerWidthAtScale1 = layerWidthAtScale1 * layer.transform.scale;
-      const scaledLayerHeightAtScale1 = layerHeightAtScale1 * layer.transform.scale;
-
-      // Calculate bounding box of rotated and scaled layer
-      // When a rectangle is rotated, its bounding box is larger than the rectangle itself
-      const rotationRad = (layer.transform.rotation * Math.PI) / 180;
-      const cos = Math.abs(Math.cos(rotationRad));
-      const sin = Math.abs(Math.sin(rotationRad));
-
-      // Bounding box dimensions for rotated rectangle
-      const boundingWidth = scaledLayerWidthAtScale1 * cos + scaledLayerHeightAtScale1 * sin;
-      const boundingHeight = scaledLayerWidthAtScale1 * sin + scaledLayerHeightAtScale1 * cos;
-
-      // Base center at scale 1 (anchor point) - in container coordinates
-      // The actual base image is at boundsAtScale1.x, boundsAtScale1.y with boundsAtScale1.width x boundsAtScale1.height
-      const baseCenterX = boundsAtScale1.x + boundsAtScale1.width / 2;
-      const baseCenterY = boundsAtScale1.y + boundsAtScale1.height / 2;
-
-      // Calculate constraints in container coordinates (at scale 1)
-      // Layers must stay within the actual base image bounds
-      // Use bounding box dimensions to ensure rotated/scaled layer doesn't go outside
-      const halfWidth = boundingWidth / 2;
-      const halfHeight = boundingHeight / 2;
-      const minX = boundsAtScale1.x + halfWidth;
-      const maxX = boundsAtScale1.x + boundsAtScale1.width - halfWidth;
-      const minY = boundsAtScale1.y + halfHeight;
-      const maxY = boundsAtScale1.y + boundsAtScale1.height - halfHeight;
-
-      // Current layer center position in container coordinates
-      // newX and newY are offsets from base center, so convert to absolute position
-      const currentLayerCenterX = baseCenterX + newX;
-      const currentLayerCenterY = baseCenterY + newY;
-
-      // Constrain to base bounds
-      const constrainedCenterX = Math.max(minX, Math.min(maxX, currentLayerCenterX));
-      const constrainedCenterY = Math.max(minY, Math.min(maxY, currentLayerCenterY));
-
-      // Convert back to offset from base center
-      const constrainedX = constrainedCenterX - baseCenterX;
-      const constrainedY = constrainedCenterY - baseCenterY;
-
-      onLayersChange(layers.map((l) => (l.id === layerId ? { ...l, transform: { ...l.transform, x: constrainedX, y: constrainedY } } : l)));
+      // Don't constrain position - allow layers to move outside base image bounds
+      // Position will be constrained visually with darkening overlay
+      // Just use the new position directly
+      onLayersChange(layers.map((l) => (l.id === layerId ? { ...l, transform: { ...l.transform, x: newX, y: newY } } : l)));
     },
     [layers, layerSizes, onLayersChange],
   );
