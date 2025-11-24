@@ -169,9 +169,10 @@ type LayerDisplayProps = {
   baseDisplayBounds: SharedValue<Bounds>;
   gesture?: ReturnType<typeof Gesture.Simultaneous>;
   rotationGesture?: ReturnType<typeof Gesture.Pan>;
+  resizeGesture?: ReturnType<typeof Gesture.Pan>;
 };
 
-const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture, rotationGesture }: LayerDisplayProps) => {
+const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture, rotationGesture, resizeGesture }: LayerDisplayProps) => {
   const layerOpacity = typeof layer.transform.opacity === 'number' ? layer.transform.opacity : 1;
   const layerImageStyle: ImageStyle = { width: '100%', height: '100%', opacity: layerOpacity };
 
@@ -304,6 +305,23 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture, 
           />
         </View>
       )}
+      {selected && resizeGesture && (
+        <GestureDetector gesture={resizeGesture}>
+          <View
+            style={{
+              position: 'absolute',
+              bottom: -8,
+              right: -8,
+              width: 20,
+              height: 20,
+              backgroundColor: 'rgba(255,255,255,0.95)',
+              borderRadius: 3,
+              borderWidth: 1,
+              borderColor: 'rgba(0,0,0,0.2)',
+            }}
+          />
+        </GestureDetector>
+      )}
     </Animated.View>
   );
 };
@@ -426,6 +444,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
   const rotationGestureState = useRef<
     Record<string, { startRotation: number; previousAngle: number; accumulated: number; centerX: number; centerY: number }>
   >({});
+  const resizeGestureState = useRef<Record<string, { startScale: number; startDistance: number; centerX: number; centerY: number }>>({});
   const containerRef = useRef<View | null>(null);
   const containerPageOffset = useRef({ x: 0, y: 0 });
 
@@ -868,6 +887,13 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
     [layers, onLayersChange],
   );
 
+  const updateLayerScale = useCallback(
+    (layerId: string, scale: number) => {
+      onLayersChange(layers.map((l) => (l.id === layerId ? { ...l, transform: { ...l.transform, scale } } : l)));
+    },
+    [layers, onLayersChange],
+  );
+
   const computeLayerCenterOnScreen = useCallback(
     (layer: Layer) => {
       const bounds = baseDisplayBounds.value;
@@ -928,6 +954,43 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
 
   const handleRotationEnd = useCallback((layerId: string) => {
     delete rotationGestureState.current[layerId];
+  }, []);
+
+  const handleResizeStart = useCallback(
+    (layerId: string, layer: Layer, pointerX: number, pointerY: number) => {
+      const center = computeLayerCenterOnScreen(layer);
+      const vectorX = pointerX - center.x;
+      const vectorY = pointerY - center.y;
+      const distance = Math.sqrt(vectorX * vectorX + vectorY * vectorY);
+      resizeGestureState.current[layerId] = {
+        startScale: layer.transform.scale,
+        startDistance: Math.max(distance, 1),
+        centerX: center.x,
+        centerY: center.y,
+      };
+    },
+    [computeLayerCenterOnScreen],
+  );
+
+  const handleResizeUpdate = useCallback(
+    (layerId: string, pointerX: number, pointerY: number) => {
+      const state = resizeGestureState.current[layerId];
+      if (!state) return;
+      const vectorX = pointerX - state.centerX;
+      const vectorY = pointerY - state.centerY;
+      const distance = Math.sqrt(vectorX * vectorX + vectorY * vectorY);
+      if (distance <= 0) {
+        return;
+      }
+      const ratio = distance / state.startDistance;
+      const nextScale = Math.max(0.3, Math.min(5, state.startScale * ratio));
+      updateLayerScale(layerId, nextScale);
+    },
+    [updateLayerScale],
+  );
+
+  const handleResizeEnd = useCallback((layerId: string) => {
+    delete resizeGestureState.current[layerId];
   }, []);
 
   // Create layer tap gesture for selection
@@ -1018,6 +1081,33 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
     [handleRotationEnd, handleRotationStart, handleRotationUpdate, onSelectLayer],
   );
 
+  const createLayerResize = useCallback(
+    (layer: Layer) => {
+      const resizeGesture = Gesture.Pan()
+        .minDistance(1)
+        .onStart((event) => {
+          'worklet';
+          runOnJS(onSelectLayer)(layer.id);
+          runOnJS(handleResizeStart)(layer.id, layer, event.absoluteX, event.absoluteY);
+        })
+        .onUpdate((event) => {
+          'worklet';
+          runOnJS(handleResizeUpdate)(layer.id, event.absoluteX, event.absoluteY);
+        })
+        .onEnd(() => {
+          'worklet';
+          runOnJS(handleResizeEnd)(layer.id);
+        })
+        .onFinalize(() => {
+          'worklet';
+          runOnJS(handleResizeEnd)(layer.id);
+        });
+
+      return resizeGesture;
+    },
+    [handleResizeEnd, handleResizeStart, handleResizeUpdate, onSelectLayer],
+  );
+
   useImperativeHandle(ref, () => ({
     capture: async () => {
       return await captureViewShotRef.current?.capture?.();
@@ -1036,6 +1126,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
             const isSelected = selectedLayerId === layer.id;
             const layerPan = createLayerPan(layer);
             const layerRotation = isSelected ? createLayerRotation(layer) : undefined;
+            const layerResize = isSelected ? createLayerResize(layer) : undefined;
 
             // Only render layer if size is loaded
             if (!layerSize?.width || !layerSize?.height) {
@@ -1054,6 +1145,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
                 baseDisplayBounds={baseDisplayBounds}
                 gesture={layerGesture}
                 rotationGesture={layerRotation}
+                resizeGesture={layerResize}
               />
             );
           })}
