@@ -36,13 +36,13 @@ export type ImageCanvasHandle = {
   capture: () => Promise<string | undefined>;
 };
 
-type LayerDarkeningOverlayProps = {
+type LayerOverflowIndicatorProps = {
   layer: Layer;
   layerSize?: LayerSize;
   baseDisplayBounds: SharedValue<Bounds>;
 };
 
-const LayerDarkeningOverlay = ({ layer, layerSize, baseDisplayBounds }: LayerDarkeningOverlayProps) => {
+const LayerOverflowIndicator = ({ layer, layerSize, baseDisplayBounds }: LayerOverflowIndicatorProps) => {
   // Calculate overlays synchronously for rendering
   const bounds = baseDisplayBounds.value;
   if (!layerSize?.width || !layerSize?.height || !bounds.width || !bounds.height) {
@@ -139,7 +139,11 @@ const LayerDarkeningOverlay = ({ layer, layerSize, baseDisplayBounds }: LayerDar
             left: overlay.left,
             width: overlay.width,
             height: overlay.height,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            borderWidth: 1,
+            borderColor: 'rgba(255, 99, 71, 0.85)',
+            borderStyle: 'dashed',
+            backgroundColor: 'rgba(255, 99, 71, 0.12)',
+            borderRadius: 2,
             pointerEvents: 'none',
           }}
         />
@@ -215,8 +219,8 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture }
           <View style={{ width: '100%', height: '100%' }} collapsable={false}>
             <Image source={{ uri: layer.uri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
 
-            {/* Darkening overlays for parts outside base image */}
-            <LayerDarkeningOverlay layer={layer} layerSize={layerSize} baseDisplayBounds={baseDisplayBounds} />
+            {/* Visual cue for layer parts outside the base image */}
+            <LayerOverflowIndicator layer={layer} layerSize={layerSize} baseDisplayBounds={baseDisplayBounds} />
 
             {selected && (
               <View
@@ -239,8 +243,8 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture }
         <View style={{ width: '100%', height: '100%' }} collapsable={false}>
           <Image source={{ uri: layer.uri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
 
-          {/* Darkening overlays for parts outside base image */}
-          <LayerDarkeningOverlay layer={layer} layerSize={layerSize} baseDisplayBounds={baseDisplayBounds} />
+          {/* Visual cue for layer parts outside the base image */}
+          <LayerOverflowIndicator layer={layer} layerSize={layerSize} baseDisplayBounds={baseDisplayBounds} />
 
           {selected && (
             <View
@@ -755,7 +759,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
       prevLayerTransformsRef.current[layer.id] = { rotation: currentRotation, scale: currentScale };
 
       // Don't constrain position - allow layers to move outside base image bounds
-      // Position will be constrained visually with darkening overlay
+      // Overflow areas are shown with an indicator so users see what is outside
       return layer;
     });
 
@@ -797,7 +801,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
       }
 
       // Don't constrain position - allow layers to move outside base image bounds
-      // Position will be constrained visually with darkening overlay
+      // Overflow areas are shown with an indicator so users see what is outside
       // Just use the new position directly
       onLayersChange(layers.map((l) => (l.id === layerId ? { ...l, transform: { ...l.transform, x: newX, y: newY } } : l)));
     },
