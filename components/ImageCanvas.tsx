@@ -43,7 +43,6 @@ type LayerOverflowIndicatorProps = {
 };
 
 const LayerOverflowIndicator = ({ layer, layerSize, baseDisplayBounds }: LayerOverflowIndicatorProps) => {
-  // Calculate overlays synchronously for rendering
   const bounds = baseDisplayBounds.value;
   if (!layerSize?.width || !layerSize?.height || !bounds.width || !bounds.height) {
     return null;
@@ -64,15 +63,25 @@ const LayerOverflowIndicator = ({ layer, layerSize, baseDisplayBounds }: LayerOv
 
   const baseCenterX = bounds.x + bounds.width / 2;
   const baseCenterY = bounds.y + bounds.height / 2;
-  const offsetX = layer.transform.x;
-  const offsetY = layer.transform.y;
+  const centerX = baseCenterX + layer.transform.x;
+  const centerY = baseCenterY + layer.transform.y;
 
-  const layerLeft = baseCenterX + offsetX - layerWidth / 2;
-  const layerTop = baseCenterY + offsetY - layerHeight / 2;
-  const layerRight = layerLeft + layerWidth;
-  const layerBottom = layerTop + layerHeight;
+  const rotationRadians = (layer.transform.rotation * Math.PI) / 180;
+  const cosRotation = Math.cos(rotationRadians);
+  const sinRotation = Math.sin(rotationRadians);
+  const halfWidth = layerWidth / 2;
+  const halfHeight = layerHeight / 2;
 
-  // Base image bounds
+  // Axis-aligned bounding box that contains the rotated layer
+  const halfBoundingWidth = Math.abs(halfWidth * cosRotation) + Math.abs(halfHeight * sinRotation);
+  const halfBoundingHeight = Math.abs(halfWidth * sinRotation) + Math.abs(halfHeight * cosRotation);
+  const bboxLeft = centerX - halfBoundingWidth;
+  const bboxTop = centerY - halfBoundingHeight;
+  const bboxRight = centerX + halfBoundingWidth;
+  const bboxBottom = centerY + halfBoundingHeight;
+  const bboxWidth = bboxRight - bboxLeft;
+  const bboxHeight = bboxBottom - bboxTop;
+
   const baseLeft = bounds.x;
   const baseTop = bounds.y;
   const baseRight = bounds.x + bounds.width;
@@ -80,47 +89,47 @@ const LayerOverflowIndicator = ({ layer, layerSize, baseDisplayBounds }: LayerOv
 
   const overlays: Array<{ top: number; left: number; width: number; height: number }> = [];
 
-  // Top overlay (if layer extends above base)
-  if (layerTop < baseTop) {
+  const topOverflow = Math.max(0, baseTop - bboxTop);
+  if (topOverflow > 0) {
     overlays.push({
-      top: 0,
-      left: 0,
-      width: layerWidth,
-      height: baseTop - layerTop,
+      top: bboxTop,
+      left: bboxLeft,
+      width: bboxWidth,
+      height: Math.min(topOverflow, bboxHeight),
     });
   }
 
-  // Bottom overlay (if layer extends below base)
-  if (layerBottom > baseBottom) {
+  const bottomOverflow = Math.max(0, bboxBottom - baseBottom);
+  if (bottomOverflow > 0) {
     overlays.push({
-      top: baseBottom - layerTop,
-      left: 0,
-      width: layerWidth,
-      height: layerBottom - baseBottom,
+      top: Math.max(baseBottom, bboxTop),
+      left: bboxLeft,
+      width: bboxWidth,
+      height: Math.min(bottomOverflow, bboxHeight),
     });
   }
 
-  // Left overlay (if layer extends left of base)
-  if (layerLeft < baseLeft) {
-    const overlayTop = Math.max(0, baseTop - layerTop);
-    const overlayBottom = Math.min(layerHeight, baseBottom - layerTop);
+  const verticalOverlapTop = Math.max(bboxTop, baseTop);
+  const verticalOverlapBottom = Math.min(bboxBottom, baseBottom);
+  const verticalOverlapHeight = Math.max(0, verticalOverlapBottom - verticalOverlapTop);
+
+  const leftOverflow = Math.max(0, baseLeft - bboxLeft);
+  if (leftOverflow > 0 && verticalOverlapHeight > 0) {
     overlays.push({
-      top: overlayTop,
-      left: 0,
-      width: baseLeft - layerLeft,
-      height: overlayBottom - overlayTop,
+      top: verticalOverlapTop,
+      left: bboxLeft,
+      width: Math.min(leftOverflow, bboxWidth),
+      height: verticalOverlapHeight,
     });
   }
 
-  // Right overlay (if layer extends right of base)
-  if (layerRight > baseRight) {
-    const overlayTop = Math.max(0, baseTop - layerTop);
-    const overlayBottom = Math.min(layerHeight, baseBottom - layerTop);
+  const rightOverflow = Math.max(0, bboxRight - baseRight);
+  if (rightOverflow > 0 && verticalOverlapHeight > 0) {
     overlays.push({
-      top: overlayTop,
-      left: baseRight - layerLeft,
-      width: layerRight - baseRight,
-      height: overlayBottom - overlayTop,
+      top: verticalOverlapTop,
+      left: Math.max(baseRight, bboxLeft),
+      width: Math.min(rightOverflow, bboxWidth),
+      height: verticalOverlapHeight,
     });
   }
 
@@ -132,7 +141,7 @@ const LayerOverflowIndicator = ({ layer, layerSize, baseDisplayBounds }: LayerOv
     <>
       {overlays.map((overlay, index) => (
         <View
-          key={index}
+          key={`${layer.id}-overflow-${index}`}
           style={{
             position: 'absolute',
             top: overlay.top,
@@ -218,10 +227,6 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture }
         <GestureDetector gesture={gesture}>
           <View style={{ width: '100%', height: '100%' }} collapsable={false}>
             <Image source={{ uri: layer.uri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
-
-            {/* Visual cue for layer parts outside the base image */}
-            <LayerOverflowIndicator layer={layer} layerSize={layerSize} baseDisplayBounds={baseDisplayBounds} />
-
             {selected && (
               <View
                 style={{
@@ -242,10 +247,6 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture }
       ) : (
         <View style={{ width: '100%', height: '100%' }} collapsable={false}>
           <Image source={{ uri: layer.uri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
-
-          {/* Visual cue for layer parts outside the base image */}
-          <LayerOverflowIndicator layer={layer} layerSize={layerSize} baseDisplayBounds={baseDisplayBounds} />
-
           {selected && (
             <View
               style={{
@@ -905,6 +906,13 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
                 gesture={layerGesture}
               />
             );
+          })}
+          {layers.map((layer) => {
+            const layerSize = layerSizes[layer.id];
+            if (!layerSize?.width || !layerSize?.height) {
+              return null;
+            }
+            return <LayerOverflowIndicator key={`${layer.id}-overflow`} layer={layer} layerSize={layerSize} baseDisplayBounds={baseDisplayBounds} />;
           })}
         </Animated.View>
       </GestureDetector>
