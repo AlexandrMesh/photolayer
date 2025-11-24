@@ -244,6 +244,37 @@ const Index = () => {
         </View>
       )}
 
+      {saving && (
+        <View
+          pointerEvents='auto'
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+          }}
+        >
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingVertical: 20,
+              borderRadius: 16,
+              backgroundColor: theme.surface,
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <ActivityIndicator size='large' color={theme.primary} />
+            <Text style={{ color: theme.text, fontSize: 16, fontWeight: '500' }}>{t('saving')}</Text>
+          </View>
+        </View>
+      )}
+
       <LayersBottomSheet
         visible={layersSheetVisible}
         layers={layers}
