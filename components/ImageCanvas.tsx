@@ -168,9 +168,10 @@ type LayerDisplayProps = {
   selected: boolean;
   baseDisplayBounds: SharedValue<Bounds>;
   gesture?: ReturnType<typeof Gesture.Simultaneous>;
+  rotationGesture?: ReturnType<typeof Gesture.Pan>;
 };
 
-const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture }: LayerDisplayProps) => {
+const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture, rotationGesture }: LayerDisplayProps) => {
   const layerOpacity = typeof layer.transform.opacity === 'number' ? layer.transform.opacity : 1;
   const layerImageStyle: ImageStyle = { width: '100%', height: '100%', opacity: layerOpacity };
 
@@ -257,6 +258,37 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture }
       ) : (
         <View style={{ width: '100%', height: '100%' }} collapsable={false}>
           {layerContent}
+        </View>
+      )}
+      {selected && rotationGesture && (
+        <View
+          pointerEvents='box-none'
+          style={{
+            position: 'absolute',
+            top: -40,
+            right: -40,
+            width: 72,
+            height: 72,
+            alignItems: 'flex-end',
+            justifyContent: 'flex-start',
+          }}
+        >
+          <GestureDetector gesture={rotationGesture}>
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: 'rgba(0,0,0,0.55)',
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.9)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ color: 'white', fontSize: 18, fontWeight: '600' }}>↻</Text>
+            </View>
+          </GestureDetector>
         </View>
       )}
     </Animated.View>
@@ -378,6 +410,11 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
 
   // Layer pan start positions
   const layerPanStart = useRef<Record<string, { x: number; y: number }>>({});
+  const rotationGestureState = useRef<
+    Record<string, { startRotation: number; previousAngle: number; accumulated: number; centerX: number; centerY: number }>
+  >({});
+  const containerRef = useRef<View | null>(null);
+  const containerPageOffset = useRef({ x: 0, y: 0 });
 
   // State
   const [baseImageSize, setBaseImageSize] = useState({ width: 0, height: 0 });
@@ -525,6 +562,11 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
       containerWidth.value = width;
       containerHeight.value = height;
       setContainerSize({ width, height });
+      requestAnimationFrame(() => {
+        containerRef.current?.measure?.((_, __, ___, ____, pageX = 0, pageY = 0) => {
+          containerPageOffset.current = { x: pageX, y: pageY };
+        });
+      });
     },
     [containerHeight, containerWidth],
   );
@@ -806,6 +848,75 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
     [layers, layerSizes, onLayersChange],
   );
 
+  const updateLayerRotation = useCallback(
+    (layerId: string, rotation: number) => {
+      onLayersChange(layers.map((l) => (l.id === layerId ? { ...l, transform: { ...l.transform, rotation } } : l)));
+    },
+    [layers, onLayersChange],
+  );
+
+  const computeLayerCenterOnScreen = useCallback(
+    (layer: Layer) => {
+      const bounds = baseDisplayBounds.value;
+      const baseCenterX = bounds.x + bounds.width / 2;
+      const baseCenterY = bounds.y + bounds.height / 2;
+      const layerCenterX = baseCenterX + layer.transform.x;
+      const layerCenterY = baseCenterY + layer.transform.y;
+      const scale = baseScale.value;
+      const translateX = baseTranslateX.value;
+      const translateY = baseTranslateY.value;
+      return {
+        x: containerPageOffset.current.x + layerCenterX * scale + translateX,
+        y: containerPageOffset.current.y + layerCenterY * scale + translateY,
+      };
+    },
+    [baseDisplayBounds, baseScale, baseTranslateX, baseTranslateY],
+  );
+
+  const handleRotationStart = useCallback(
+    (layerId: string, layer: Layer, pointerX: number, pointerY: number) => {
+      const center = computeLayerCenterOnScreen(layer);
+      const vectorX = pointerX - center.x;
+      const vectorY = pointerY - center.y;
+      const initialAngle = Math.atan2(vectorY, vectorX);
+      rotationGestureState.current[layerId] = {
+        startRotation: layer.transform.rotation,
+        previousAngle: initialAngle,
+        accumulated: 0,
+        centerX: center.x,
+        centerY: center.y,
+      };
+    },
+    [computeLayerCenterOnScreen],
+  );
+
+  const handleRotationUpdate = useCallback(
+    (layerId: string, pointerX: number, pointerY: number) => {
+      const state = rotationGestureState.current[layerId];
+      if (!state) return;
+      const vectorX = pointerX - state.centerX;
+      const vectorY = pointerY - state.centerY;
+      if (vectorX === 0 && vectorY === 0) {
+        return;
+      }
+      const angle = Math.atan2(vectorY, vectorX);
+      let delta = angle - state.previousAngle;
+      if (delta > Math.PI) {
+        delta -= Math.PI * 2;
+      } else if (delta < -Math.PI) {
+        delta += Math.PI * 2;
+      }
+      state.previousAngle = angle;
+      state.accumulated += (delta * 180) / Math.PI;
+      updateLayerRotation(layerId, state.startRotation + state.accumulated);
+    },
+    [updateLayerRotation],
+  );
+
+  const handleRotationEnd = useCallback((layerId: string) => {
+    delete rotationGestureState.current[layerId];
+  }, []);
+
   // Create layer tap gesture for selection
   const createLayerTap = useCallback(
     (layer: Layer) => {
@@ -867,6 +978,33 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
     [baseScale, baseDisplayBounds, onSelectLayer, updateLayerPosition],
   );
 
+  const createLayerRotation = useCallback(
+    (layer: Layer) => {
+      const rotationGesture = Gesture.Pan()
+        .minDistance(1)
+        .onStart((event) => {
+          'worklet';
+          runOnJS(onSelectLayer)(layer.id);
+          runOnJS(handleRotationStart)(layer.id, layer, event.absoluteX, event.absoluteY);
+        })
+        .onUpdate((event) => {
+          'worklet';
+          runOnJS(handleRotationUpdate)(layer.id, event.absoluteX, event.absoluteY);
+        })
+        .onEnd(() => {
+          'worklet';
+          runOnJS(handleRotationEnd)(layer.id);
+        })
+        .onFinalize(() => {
+          'worklet';
+          runOnJS(handleRotationEnd)(layer.id);
+        });
+
+      return rotationGesture;
+    },
+    [handleRotationEnd, handleRotationStart, handleRotationUpdate, onSelectLayer],
+  );
+
   useImperativeHandle(ref, () => ({
     capture: async () => {
       return await captureViewShotRef.current?.capture?.();
@@ -874,7 +1012,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
   }));
 
   return (
-    <View style={{ width: '100%', height: '100%', position: 'relative' }} onLayout={handleLayout}>
+    <View ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative' }} onLayout={handleLayout}>
       <GestureDetector gesture={baseGesture}>
         <Animated.View style={[{ width: '100%', height: '100%' }, baseAnimatedStyle]}>
           <Image source={{ uri: baseImageUri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
@@ -884,6 +1022,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
             const layerSize = layerSizes[layer.id];
             const isSelected = selectedLayerId === layer.id;
             const layerPan = createLayerPan(layer);
+            const layerRotation = isSelected ? createLayerRotation(layer) : undefined;
 
             // Only render layer if size is loaded
             if (!layerSize?.width || !layerSize?.height) {
@@ -901,6 +1040,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(({ baseImageUri, layers
                 selected={isSelected}
                 baseDisplayBounds={baseDisplayBounds}
                 gesture={layerGesture}
+                rotationGesture={layerRotation}
               />
             );
           })}
