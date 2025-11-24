@@ -312,14 +312,18 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture, 
               position: 'absolute',
               bottom: -8,
               right: -8,
-              width: 20,
-              height: 20,
-              backgroundColor: 'rgba(255,255,255,0.95)',
-              borderRadius: 3,
+              width: 22,
+              height: 22,
+              backgroundColor: 'rgba(0,0,0,0.85)',
+              borderRadius: 4,
               borderWidth: 1,
-              borderColor: 'rgba(0,0,0,0.2)',
+              borderColor: 'rgba(255,255,255,0.35)',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
-          />
+          >
+            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>⇲</Text>
+          </View>
         </GestureDetector>
       )}
     </Animated.View>

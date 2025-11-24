@@ -292,7 +292,7 @@ const LayersBottomSheet = ({
       }
     });
 
-  const SCALE_MIN = 0.5;
+  const SCALE_MIN = 0.3;
   const SCALE_MAX = 2;
   const ROTATION_MIN = -180;
   const ROTATION_MAX = 180;
