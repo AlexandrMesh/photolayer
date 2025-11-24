@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
@@ -146,7 +146,7 @@ const Index = () => {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background, position: 'relative' }}>
       <Header onSettingsPress={() => router.push('/settings')} />
       <View style={{ flex: 1, padding: 16, paddingTop: 4, gap: 12 }}>
         <View
@@ -213,6 +213,37 @@ const Index = () => {
           </View>
         )}
       </View>
+
+      {picking && (
+        <View
+          pointerEvents='auto'
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(15,23,42,0.45)',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+          }}
+        >
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingVertical: 20,
+              borderRadius: 16,
+              backgroundColor: theme.surface,
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <ActivityIndicator size='large' color={theme.primary} />
+            <Text style={{ color: theme.textSecondary, fontSize: 16 }}>{t('loading')}</Text>
+          </View>
+        </View>
+      )}
 
       <LayersBottomSheet
         visible={layersSheetVisible}
