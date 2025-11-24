@@ -120,6 +120,19 @@ const LayersBottomSheet = ({
     [layers, onUpdateLayerTransform],
   );
 
+  const handleOpacityAdjust = useCallback(
+    (layerId: string, delta: number) => {
+      const layer = layers.find((l) => l.id === layerId);
+      if (!layer) return;
+      const currentOpacity = typeof layer.transform.opacity === 'number' ? layer.transform.opacity : 1;
+      const nextOpacity = Math.max(0, Math.min(1, currentOpacity + delta));
+      onUpdateLayerTransform(layerId, {
+        opacity: Number(nextOpacity.toFixed(2)),
+      });
+    },
+    [layers, onUpdateLayerTransform],
+  );
+
   if (!visible) return null;
 
   return (
@@ -201,13 +214,13 @@ const LayersBottomSheet = ({
             scrollEnabled={true}
             renderItem={({ item: layer }) => {
               const isSelected = selectedLayerId === layer.id;
+              const opacityValue = typeof layer.transform.opacity === 'number' ? layer.transform.opacity : 1;
+              const opacityPercent = Math.round(opacityValue * 100);
               return (
                 <Pressable
                   onPress={() => onSelectLayer(isSelected ? null : layer.id)}
                   style={({ pressed }) => [
                     {
-                      flexDirection: 'row',
-                      alignItems: 'center',
                       padding: 16,
                       marginHorizontal: 16,
                       marginBottom: 8,
@@ -219,98 +232,146 @@ const LayersBottomSheet = ({
                     },
                   ]}
                 >
-                  <Image source={{ uri: layer.uri }} style={{ width: 50, height: 50, borderRadius: 8 }} resizeMode='cover' />
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>
-                      {t('layer')} {layers.length - layers.indexOf(layer)}
-                    </Text>
-                    <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>
-                      {Math.round(layer.transform.rotation)}° • {Math.round(layer.transform.scale * 100)}%
-                    </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Image source={{ uri: layer.uri }} style={{ width: 50, height: 50, borderRadius: 8 }} resizeMode='cover' />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>
+                        {t('layer')} {layers.length - layers.indexOf(layer)}
+                      </Text>
+                      <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>
+                        {Math.round(layer.transform.rotation)}° • {Math.round(layer.transform.scale * 100)}% • {opacityPercent}% {t('opacity')}
+                      </Text>
+                    </View>
+
+                    {isSelected && (
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <Pressable
+                          onPress={() => handleScale(layer.id, -0.1)}
+                          style={({ pressed }) => [
+                            {
+                              width: 32,
+                              height: 32,
+                              borderRadius: 16,
+                              backgroundColor: theme.background,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              opacity: pressed ? 0.7 : 1,
+                            },
+                          ]}
+                        >
+                          <MaterialCommunityIcons name='minus' size={18} color={theme.text} />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleScale(layer.id, 0.1)}
+                          style={({ pressed }) => [
+                            {
+                              width: 32,
+                              height: 32,
+                              borderRadius: 16,
+                              backgroundColor: theme.background,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              opacity: pressed ? 0.7 : 1,
+                            },
+                          ]}
+                        >
+                          <MaterialCommunityIcons name='plus' size={18} color={theme.text} />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleRotate(layer.id, -15)}
+                          style={({ pressed }) => [
+                            {
+                              width: 32,
+                              height: 32,
+                              borderRadius: 16,
+                              backgroundColor: theme.background,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              opacity: pressed ? 0.7 : 1,
+                            },
+                          ]}
+                        >
+                          <MaterialCommunityIcons name='rotate-left' size={18} color={theme.text} />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleRotate(layer.id, 15)}
+                          style={({ pressed }) => [
+                            {
+                              width: 32,
+                              height: 32,
+                              borderRadius: 16,
+                              backgroundColor: theme.background,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              opacity: pressed ? 0.7 : 1,
+                            },
+                          ]}
+                        >
+                          <MaterialCommunityIcons name='rotate-right' size={18} color={theme.text} />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => onRemoveLayer(layer.id)}
+                          style={({ pressed }) => [
+                            {
+                              width: 32,
+                              height: 32,
+                              borderRadius: 16,
+                              backgroundColor: '#FF3B30',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              opacity: pressed ? 0.7 : 1,
+                            },
+                          ]}
+                        >
+                          <MaterialCommunityIcons name='delete' size={18} color='white' />
+                        </Pressable>
+                      </View>
+                    )}
                   </View>
 
                   {isSelected && (
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <Pressable
-                        onPress={() => handleScale(layer.id, -0.1)}
-                        style={({ pressed }) => [
-                          {
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            backgroundColor: theme.background,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            opacity: pressed ? 0.7 : 1,
-                          },
-                        ]}
-                      >
-                        <MaterialCommunityIcons name='minus' size={18} color={theme.text} />
-                      </Pressable>
-                      <Pressable
-                        onPress={() => handleScale(layer.id, 0.1)}
-                        style={({ pressed }) => [
-                          {
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            backgroundColor: theme.background,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            opacity: pressed ? 0.7 : 1,
-                          },
-                        ]}
-                      >
-                        <MaterialCommunityIcons name='plus' size={18} color={theme.text} />
-                      </Pressable>
-                      <Pressable
-                        onPress={() => handleRotate(layer.id, -15)}
-                        style={({ pressed }) => [
-                          {
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            backgroundColor: theme.background,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            opacity: pressed ? 0.7 : 1,
-                          },
-                        ]}
-                      >
-                        <MaterialCommunityIcons name='rotate-left' size={18} color={theme.text} />
-                      </Pressable>
-                      <Pressable
-                        onPress={() => handleRotate(layer.id, 15)}
-                        style={({ pressed }) => [
-                          {
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            backgroundColor: theme.background,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            opacity: pressed ? 0.7 : 1,
-                          },
-                        ]}
-                      >
-                        <MaterialCommunityIcons name='rotate-right' size={18} color={theme.text} />
-                      </Pressable>
-                      <Pressable
-                        onPress={() => onRemoveLayer(layer.id)}
-                        style={({ pressed }) => [
-                          {
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            backgroundColor: '#FF3B30',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            opacity: pressed ? 0.7 : 1,
-                          },
-                        ]}
-                      >
-                        <MaterialCommunityIcons name='delete' size={18} color='white' />
-                      </Pressable>
+                    <View style={{ width: '100%', marginTop: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ color: theme.text, fontSize: 14, fontWeight: '600' }}>{t('opacity')}</Text>
+                        <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{opacityPercent}%</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                        <Pressable
+                          onPress={() => handleOpacityAdjust(layer.id, -0.1)}
+                          style={({ pressed }) => [
+                            {
+                              width: 32,
+                              height: 32,
+                              borderRadius: 16,
+                              backgroundColor: theme.background,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              opacity: pressed ? 0.7 : 1,
+                            },
+                          ]}
+                        >
+                          <MaterialCommunityIcons name='minus' size={18} color={theme.text} />
+                        </Pressable>
+                        <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: theme.border, overflow: 'hidden' }}>
+                          <View style={{ width: `${opacityPercent}%`, height: '100%', borderRadius: 3, backgroundColor: theme.primary }} />
+                        </View>
+                        <Pressable
+                          onPress={() => handleOpacityAdjust(layer.id, 0.1)}
+                          style={({ pressed }) => [
+                            {
+                              width: 32,
+                              height: 32,
+                              borderRadius: 16,
+                              backgroundColor: theme.background,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              opacity: pressed ? 0.7 : 1,
+                            },
+                          ]}
+                        >
+                          <MaterialCommunityIcons name='plus' size={18} color={theme.text} />
+                        </Pressable>
+                      </View>
                     </View>
                   )}
                 </Pressable>

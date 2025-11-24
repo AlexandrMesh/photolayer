@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 
-import { Image, Pressable, Text, View, type LayoutChangeEvent } from 'react-native';
+import { Image, Pressable, Text, View, type ImageStyle, type LayoutChangeEvent } from 'react-native';
 
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -13,6 +13,7 @@ export type LayerTransform = {
   y: number;
   scale: number;
   rotation: number;
+  opacity: number;
 };
 
 export type Layer = {
@@ -170,6 +171,9 @@ type LayerDisplayProps = {
 };
 
 const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture }: LayerDisplayProps) => {
+  const layerOpacity = typeof layer.transform.opacity === 'number' ? layer.transform.opacity : 1;
+  const layerImageStyle: ImageStyle = { width: '100%', height: '100%', opacity: layerOpacity };
+
   const animatedStyle = useAnimatedStyle(() => {
     if (!layerSize?.width || !layerSize?.height) {
       return { position: 'absolute', width: 0, height: 0, opacity: 0 };
@@ -221,47 +225,38 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture }
     };
   }, [layer, layerSize]);
 
+  const layerContent = (
+    <>
+      <Image source={{ uri: layer.uri }} style={layerImageStyle} resizeMode='contain' />
+      {selected && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            borderWidth: 2,
+            borderColor: '#007AFF',
+            borderRadius: 4,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+    </>
+  );
+
   return (
     <Animated.View style={[animatedStyle]} collapsable={false} pointerEvents='box-none'>
       {gesture ? (
         <GestureDetector gesture={gesture}>
           <View style={{ width: '100%', height: '100%' }} collapsable={false}>
-            <Image source={{ uri: layer.uri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
-            {selected && (
-              <View
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  borderWidth: 2,
-                  borderColor: '#007AFF',
-                  borderRadius: 4,
-                  pointerEvents: 'none',
-                }}
-              />
-            )}
+            {layerContent}
           </View>
         </GestureDetector>
       ) : (
         <View style={{ width: '100%', height: '100%' }} collapsable={false}>
-          <Image source={{ uri: layer.uri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
-          {selected && (
-            <View
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                borderWidth: 2,
-                borderColor: '#007AFF',
-                borderRadius: 4,
-                pointerEvents: 'none',
-              }}
-            />
-          )}
+          {layerContent}
         </View>
       )}
     </Animated.View>
@@ -276,6 +271,7 @@ type LayerCaptureProps = {
 };
 
 const LayerCapture = ({ layer, layerSize, baseImageSizeShared, baseDisplayBounds }: LayerCaptureProps) => {
+  const layerOpacity = typeof layer.transform.opacity === 'number' ? layer.transform.opacity : 1;
   // Compute style synchronously using useMemo for ViewShot compatibility
   const style = useMemo(() => {
     // Read values from shared values synchronously
@@ -350,8 +346,9 @@ const LayerCapture = ({ layer, layerSize, baseImageSizeShared, baseDisplayBounds
       width: layerWidth * scaleX,
       height: layerHeight * scaleY,
       transform: [{ rotate: `${layer.transform.rotation}deg` }],
+      opacity: layerOpacity,
     };
-  }, [layer, layerSize, baseImageSizeShared, baseDisplayBounds]);
+  }, [layer, layerSize, baseImageSizeShared, baseDisplayBounds, layerOpacity]);
 
   if (!style || !layerSize?.width || !layerSize?.height) {
     return null;

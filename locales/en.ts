@@ -48,4 +48,5 @@ export default {
   layer: 'Layer',
   noLayers: 'No layers',
   addLayerHint: 'Press + to add a layer',
+  opacity: 'Opacity',
 };

@@ -58,6 +58,7 @@ type Translations = {
   layer: string;
   noLayers: string;
   addLayerHint: string;
+  opacity: string;
 };
 
 type I18nContextType = {

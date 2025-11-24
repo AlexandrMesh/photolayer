@@ -48,4 +48,5 @@ export default {
   layer: 'Слой',
   noLayers: 'Нет слоев',
   addLayerHint: 'Нажмите + чтобы добавить слой',
+  opacity: 'Прозрачность',
 };

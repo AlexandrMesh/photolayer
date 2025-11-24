@@ -84,7 +84,7 @@ const Index = () => {
         const newLayer: Layer = {
           id: `layer-${Date.now()}-${Math.random()}`,
           uri: result.assets[0].uri,
-          transform: { x: 0, y: 0, scale: 1, rotation: 0 },
+          transform: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 },
         };
         setLayers((prev) => [...prev, newLayer]);
         setSelectedLayerId(newLayer.id);
