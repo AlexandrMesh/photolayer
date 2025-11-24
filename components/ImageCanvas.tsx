@@ -265,30 +265,43 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture, 
           pointerEvents='box-none'
           style={{
             position: 'absolute',
-            top: -40,
-            right: -40,
-            width: 72,
-            height: 72,
-            alignItems: 'flex-end',
-            justifyContent: 'flex-start',
+            top: -48,
+            left: 0,
+            right: 0,
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
           <GestureDetector gesture={rotationGesture}>
             <View
               style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: 'rgba(0,0,0,0.55)',
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                backgroundColor: 'rgba(0,0,0,0.6)',
                 borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.9)',
+                borderColor: 'rgba(255,255,255,0.85)',
                 alignItems: 'center',
                 justifyContent: 'center',
+                shadowColor: '#000',
+                shadowOpacity: 0.25,
+                shadowRadius: 3,
+                shadowOffset: { width: 0, height: 2 },
               }}
             >
-              <Text style={{ color: 'white', fontSize: 18, fontWeight: '600' }}>↻</Text>
+              <Text style={{ color: 'white', fontSize: 15, fontWeight: '600' }}>↻</Text>
             </View>
           </GestureDetector>
+          <View
+            pointerEvents='none'
+            style={{
+              width: 2,
+              height: 18,
+              backgroundColor: 'rgba(255,255,255,0.75)',
+              marginTop: 4,
+              borderRadius: 1,
+            }}
+          />
         </View>
       )}
     </Animated.View>
