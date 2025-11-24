@@ -99,21 +99,19 @@ const Index = () => {
     setLayers(newLayers);
   }, []);
 
-  const handleUpdateLayerTransform = useCallback(
-    (layerId: string, transform: Partial<LayerTransform>) => {
-      setLayers((prev) =>
-        prev.map((layer) => (layer.id === layerId ? { ...layer, transform: { ...layer.transform, ...transform } } : layer)),
-      );
-    },
-    [],
-  );
+  const handleUpdateLayerTransform = useCallback((layerId: string, transform: Partial<LayerTransform>) => {
+    setLayers((prev) => prev.map((layer) => (layer.id === layerId ? { ...layer, transform: { ...layer.transform, ...transform } } : layer)));
+  }, []);
 
-  const handleRemoveLayer = useCallback((layerId: string) => {
-    setLayers((prev) => prev.filter((layer) => layer.id !== layerId));
-    if (selectedLayerId === layerId) {
-      setSelectedLayerId(null);
-    }
-  }, [selectedLayerId]);
+  const handleRemoveLayer = useCallback(
+    (layerId: string) => {
+      setLayers((prev) => prev.filter((layer) => layer.id !== layerId));
+      if (selectedLayerId === layerId) {
+        setSelectedLayerId(null);
+      }
+    },
+    [selectedLayerId],
+  );
 
   const saveImage = async () => {
     if (!baseImageUri || saving) return;
@@ -167,6 +165,7 @@ const Index = () => {
               onLayersChange={handleLayersChange}
               selectedLayerId={selectedLayerId}
               onSelectLayer={setSelectedLayerId}
+              onBaseImageChange={pickBaseImage}
             />
           ) : (
             <PickingPlaceholder picking={picking} onPick={pickBaseImage} />
