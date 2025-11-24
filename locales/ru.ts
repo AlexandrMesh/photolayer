@@ -49,4 +49,6 @@ export default {
   noLayers: 'Нет слоев',
   addLayerHint: 'Нажмите + чтобы добавить слой',
   opacity: 'Прозрачность',
+  size: 'Размер',
+  angle: 'Угол',
 };

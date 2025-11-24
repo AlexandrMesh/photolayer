@@ -49,4 +49,6 @@ export default {
   noLayers: 'No layers',
   addLayerHint: 'Press + to add a layer',
   opacity: 'Opacity',
+  size: 'Size',
+  angle: 'Angle',
 };

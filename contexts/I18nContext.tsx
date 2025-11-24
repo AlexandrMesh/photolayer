@@ -59,6 +59,8 @@ type Translations = {
   noLayers: string;
   addLayerHint: string;
   opacity: string;
+  size: string;
+  angle: string;
 };
 
 type I18nContextType = {
