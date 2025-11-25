@@ -29,7 +29,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.photo_layer"
+      "package": "com.layers_photo_editor"
     },
     "web": {
       "output": "static",
