@@ -332,13 +332,14 @@ const LayerDisplay = ({
               height: 22,
               backgroundColor: resizeActive ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0.85)',
               borderRadius: 4,
-              borderWidth: 1,
-              borderColor: resizeActive ? '#fff' : 'rgba(255,255,255,0.35)',
+              borderWidth: resizeActive ? 2 : 1,
+              borderColor: resizeActive ? '#4ADE80' : '#fff',
               alignItems: 'center',
               justifyContent: 'center',
+              transform: [{ rotate: '180deg' }],
             }}
           >
-            <MaterialCommunityIcons name='arrow-expand' size={14} color='white' style={{ transform: [{ rotate: '180deg' }] }} />
+            <MaterialCommunityIcons name='arrow-expand' size={14} color='white' style={{ transform: [{ scaleX: -1 }] }} />
           </View>
         </GestureDetector>
       )}
