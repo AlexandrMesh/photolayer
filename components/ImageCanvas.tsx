@@ -294,7 +294,7 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture, 
                 shadowOffset: { width: 0, height: 2 },
               }}
             >
-              <Text style={{ color: 'white', fontSize: 15, fontWeight: '600' }}>↻</Text>
+              <MaterialCommunityIcons name='rotate-right' size={20} color='white' />
             </View>
           </GestureDetector>
           <View
@@ -1243,29 +1243,29 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
           </Pressable>
         )}
 
-      {showAddLayerHint && onAddLayer && (
-        <Pressable
-          onPress={onAddLayer}
-          style={({ pressed }) => [
-            {
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: [{ translateX: -32 }, { translateY: -32 }, { scale: pressed ? 0.96 : 1 }],
-              width: 64,
-              height: 64,
-              borderRadius: 32,
-              backgroundColor: 'rgba(15, 23, 42, 0.6)',
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.4)',
-              alignItems: 'center',
-              justifyContent: 'center',
-            },
-          ]}
-        >
-          <Text style={{ color: 'white', fontSize: 36, lineHeight: 36 }}>＋</Text>
-        </Pressable>
-      )}
+        {showAddLayerHint && onAddLayer && (
+          <Pressable
+            onPress={onAddLayer}
+            style={({ pressed }) => [
+              {
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: [{ translateX: -32 }, { translateY: -32 }, { scale: pressed ? 0.96 : 1 }],
+                width: 64,
+                height: 64,
+                borderRadius: 32,
+                backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.4)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
+            ]}
+          >
+            <Text style={{ color: 'white', fontSize: 36, lineHeight: 36 }}>＋</Text>
+          </Pressable>
+        )}
 
         {/* Scale controls */}
         <View
