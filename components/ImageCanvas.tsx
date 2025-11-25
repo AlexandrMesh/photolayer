@@ -26,6 +26,22 @@ export type Layer = {
 type LayerSize = { width: number; height: number };
 type Bounds = { x: number; y: number; width: number; height: number };
 
+const ROTATION_SNAP_DEGREES = 90;
+const ROTATION_SNAP_THRESHOLD = 4;
+
+const snapRotationToRightAngle = (angle: number) => {
+  const normalized = ((angle % 360) + 360) % 360;
+  const remainder = normalized % ROTATION_SNAP_DEGREES;
+  if (remainder < ROTATION_SNAP_THRESHOLD) {
+    return angle - remainder;
+  }
+  const remainingToNext = ROTATION_SNAP_DEGREES - remainder;
+  if (remainingToNext < ROTATION_SNAP_THRESHOLD) {
+    return angle + remainingToNext;
+  }
+  return angle;
+};
+
 type Props = {
   baseImageUri: string;
   layers: Layer[];
@@ -972,7 +988,9 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
         }
         state.previousAngle = angle;
         state.accumulated += (delta * 180) / Math.PI;
-        updateLayerRotation(layerId, state.startRotation + state.accumulated);
+        const rawRotation = state.startRotation + state.accumulated;
+        const snappedRotation = snapRotationToRightAngle(rawRotation);
+        updateLayerRotation(layerId, snappedRotation);
       },
       [updateLayerRotation],
     );
