@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { useRouter } from 'expo-router';
@@ -191,7 +193,10 @@ const Index = () => {
                 },
               ]}
             >
-              <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{t('layers')}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <MaterialCommunityIcons name='layers-outline' size={20} color='white' />
+                <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{t('layers')}</Text>
+              </View>
             </Pressable>
             <Pressable
               onPress={saveImage}
@@ -202,14 +207,17 @@ const Index = () => {
                   paddingVertical: 16,
                   paddingHorizontal: 20,
                   borderRadius: 12,
-                  backgroundColor: saving ? theme.button : theme.primary,
+                  backgroundColor: saving ? 'rgba(34,197,94,0.5)' : '#34C759',
                   alignItems: 'center',
                   justifyContent: 'center',
                   opacity: pressed ? 0.85 : 1,
                 },
               ]}
             >
-              <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{saving ? t('saving') : t('save')}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <MaterialCommunityIcons name='content-save-outline' size={20} color='white' />
+                <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{saving ? t('saving') : t('save')}</Text>
+              </View>
             </Pressable>
           </View>
         )}
