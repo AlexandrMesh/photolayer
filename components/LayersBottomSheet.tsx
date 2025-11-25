@@ -9,8 +9,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useI18n } from '../contexts/I18nContext';
 import { useTheme } from '../contexts/ThemeContext';
-import type { ColorScheme } from '../themes/colors';
 
+import type { ColorScheme } from '../themes/colors';
 import type { Layer, LayerTransform } from './ImageCanvas';
 
 type Props = {
@@ -232,6 +232,7 @@ const LayersBottomSheet = ({
   const { t } = useI18n();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const flatListRef = useRef<FlatList<Layer> | null>(null);
 
   const translateY = useSharedValue(400);
   const opacity = useSharedValue(0);
@@ -257,6 +258,25 @@ const LayersBottomSheet = ({
 
     return () => backHandler.remove();
   }, [visible, closeSheet]);
+
+  // Scroll to selected layer when it changes or when sheet becomes visible
+  useEffect(() => {
+    if (!visible || !selectedLayerId || layers.length === 0) return;
+
+    const reversedLayers = [...layers].reverse();
+    const selectedIndex = reversedLayers.findIndex((layer) => layer.id === selectedLayerId);
+
+    if (selectedIndex >= 0 && flatListRef.current) {
+      // Delay to ensure the sheet animation completes and is fully visible
+      setTimeout(() => {
+        flatListRef.current?.scrollToIndex({
+          index: selectedIndex,
+          animated: true,
+          viewPosition: 0.5, // Center the item in the viewport
+        });
+      }, 350);
+    }
+  }, [selectedLayerId, visible, layers]);
 
   const sheetStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -364,7 +384,7 @@ const LayersBottomSheet = ({
             backgroundColor: theme.surface,
             borderTopLeftRadius: 20,
             borderTopRightRadius: 20,
-            maxHeight: '50%',
+            maxHeight: '60%',
             paddingBottom: insets.bottom,
             zIndex: 1001,
             shadowColor: '#000',
@@ -383,150 +403,158 @@ const LayersBottomSheet = ({
           </View>
         </GestureDetector>
 
-          {/* Header */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 }}>
-            <Text style={{ color: theme.text, fontSize: 20, fontWeight: 'bold' }}>{t('layers')}</Text>
-            <Pressable
-              onPress={onAddLayer}
-              style={({ pressed }) => [
-                {
-                  width: 36,
-                  height: 36,
-                  borderRadius: 18,
-                  backgroundColor: theme.primary,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: pressed ? 0.8 : 1,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons name='plus' size={20} color='white' />
-            </Pressable>
-          </View>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 }}>
+          <Text style={{ color: theme.text, fontSize: 20, fontWeight: 'bold' }}>{t('layers')}</Text>
+          <Pressable
+            onPress={onAddLayer}
+            style={({ pressed }) => [
+              {
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                backgroundColor: theme.primary,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: pressed ? 0.8 : 1,
+              },
+            ]}
+          >
+            <MaterialCommunityIcons name='plus' size={20} color='white' />
+          </Pressable>
+        </View>
 
-          {/* Layers List */}
-          <FlatList
-            data={[...layers].reverse()}
-            keyExtractor={(item) => item.id}
-            style={{ flex: 1 }}
-            contentContainerStyle={{ paddingBottom: 16 }}
-            nestedScrollEnabled={true}
-            scrollEnabled={true}
-            renderItem={({ item: layer }) => {
-              const isSelected = selectedLayerId === layer.id;
-              const opacityValue = typeof layer.transform.opacity === 'number' ? layer.transform.opacity : 1;
-              const opacityPercent = Math.round(opacityValue * 100);
-              return (
-                <View
-                  style={{
-                    padding: 16,
-                    marginHorizontal: 16,
-                    marginBottom: 8,
-                    borderRadius: 12,
-                    backgroundColor: isSelected ? theme.primary + '20' : theme.background,
-                    borderWidth: isSelected ? 2 : 1,
-                    borderColor: isSelected ? theme.primary : theme.border,
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        {/* Layers List */}
+        <FlatList
+          ref={flatListRef}
+          data={[...layers].reverse()}
+          keyExtractor={(item) => item.id}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: 16 }}
+          nestedScrollEnabled={true}
+          scrollEnabled={true}
+          onScrollToIndexFailed={(info) => {
+            // Fallback: scroll to offset if scrollToIndex fails
+            const wait = new Promise((resolve) => setTimeout(resolve, 500));
+            wait.then(() => {
+              flatListRef.current?.scrollToIndex({ index: info.index, animated: true });
+            });
+          }}
+          renderItem={({ item: layer }) => {
+            const isSelected = selectedLayerId === layer.id;
+            const opacityValue = typeof layer.transform.opacity === 'number' ? layer.transform.opacity : 1;
+            const opacityPercent = Math.round(opacityValue * 100);
+            return (
+              <View
+                style={{
+                  padding: 16,
+                  marginHorizontal: 16,
+                  marginBottom: 8,
+                  borderRadius: 12,
+                  backgroundColor: isSelected ? theme.primary + '20' : theme.background,
+                  borderWidth: isSelected ? 2 : 1,
+                  borderColor: isSelected ? theme.primary : theme.border,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <Pressable
+                    onPress={() => onSelectLayer(isSelected ? null : layer.id)}
+                    style={({ pressed }) => [
+                      {
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 12,
+                        opacity: pressed ? 0.75 : 1,
+                      },
+                    ]}
+                  >
+                    <Image source={{ uri: layer.uri }} style={{ width: 50, height: 50, borderRadius: 8 }} resizeMode='cover' />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>
+                        {t('layer')} {layers.length - layers.indexOf(layer)}
+                      </Text>
+                      <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>
+                        {Math.round(layer.transform.rotation)}° • {Math.round(layer.transform.scale * 100)}% • {opacityPercent}% {t('opacity')}
+                      </Text>
+                    </View>
+                  </Pressable>
+
+                  {isSelected && (
                     <Pressable
-                      onPress={() => onSelectLayer(isSelected ? null : layer.id)}
+                      onPress={() => onRemoveLayer(layer.id)}
                       style={({ pressed }) => [
                         {
-                          flex: 1,
-                          flexDirection: 'row',
+                          width: 36,
+                          height: 36,
+                          borderRadius: 18,
+                          backgroundColor: '#FF3B30',
                           alignItems: 'center',
-                          gap: 12,
-                          opacity: pressed ? 0.75 : 1,
+                          justifyContent: 'center',
+                          opacity: pressed ? 0.8 : 1,
                         },
                       ]}
                     >
-                      <Image source={{ uri: layer.uri }} style={{ width: 50, height: 50, borderRadius: 8 }} resizeMode='cover' />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>
-                          {t('layer')} {layers.length - layers.indexOf(layer)}
-                        </Text>
-                        <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>
-                          {Math.round(layer.transform.rotation)}° • {Math.round(layer.transform.scale * 100)}% • {opacityPercent}% {t('opacity')}
-                        </Text>
-                      </View>
+                      <MaterialCommunityIcons name='delete' size={18} color='white' />
                     </Pressable>
-
-                    {isSelected && (
-                      <Pressable
-                        onPress={() => onRemoveLayer(layer.id)}
-                        style={({ pressed }) => [
-                          {
-                            width: 36,
-                            height: 36,
-                            borderRadius: 18,
-                            backgroundColor: '#FF3B30',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            opacity: pressed ? 0.8 : 1,
-                          },
-                        ]}
-                      >
-                        <MaterialCommunityIcons name='delete' size={18} color='white' />
-                      </Pressable>
-                    )}
-                  </View>
-
-                  {isSelected && (
-                    <View style={{ width: '100%', marginTop: 12, gap: 12 }}>
-                      <LayerControlSlider
-                        label={t('size')}
-                        displayValue={`${Math.round(layer.transform.scale * 100)}%`}
-                        value={layer.transform.scale}
-                        min={SCALE_MIN}
-                        max={SCALE_MAX}
-                        step={0.01}
-                        buttonStep={0.1}
-                        defaultValue={1}
-                        resetLabel={t('reset')}
-                        onChange={(next) => handleScaleChange(layer.id, next)}
-                        theme={theme}
-                      />
-                      <LayerControlSlider
-                        label={t('angle')}
-                        displayValue={`${Math.round(layer.transform.rotation)}°`}
-                        value={layer.transform.rotation}
-                        min={ROTATION_MIN}
-                        max={ROTATION_MAX}
-                        step={1}
-                        buttonStep={15}
-                        defaultValue={0}
-                        resetLabel={t('reset')}
-                        onChange={(next) => handleRotationChange(layer.id, next)}
-                        theme={theme}
-                      />
-                      <LayerControlSlider
-                        label={t('opacity')}
-                        displayValue={`${opacityPercent}%`}
-                        value={opacityValue}
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        buttonStep={0.1}
-                        defaultValue={1}
-                        resetLabel={t('reset')}
-                        onChange={(next) => handleOpacityChange(layer.id, next)}
-                        theme={theme}
-                      />
-                    </View>
                   )}
                 </View>
-              );
-            }}
-            ListEmptyComponent={
-              <View style={{ padding: 40, alignItems: 'center' }}>
-                <MaterialCommunityIcons name='image-off' size={48} color={theme.textSecondary} />
-                <Text style={{ color: theme.textSecondary, fontSize: 16, marginTop: 12 }}>{t('noLayers')}</Text>
-                <Text style={{ color: theme.textSecondary, fontSize: 14, marginTop: 4, textAlign: 'center' }}>{t('addLayerHint')}</Text>
+
+                {isSelected && (
+                  <View style={{ width: '100%', marginTop: 12, gap: 12 }}>
+                    <LayerControlSlider
+                      label={t('size')}
+                      displayValue={`${Math.round(layer.transform.scale * 100)}%`}
+                      value={layer.transform.scale}
+                      min={SCALE_MIN}
+                      max={SCALE_MAX}
+                      step={0.01}
+                      buttonStep={0.1}
+                      defaultValue={1}
+                      resetLabel={t('reset')}
+                      onChange={(next) => handleScaleChange(layer.id, next)}
+                      theme={theme}
+                    />
+                    <LayerControlSlider
+                      label={t('angle')}
+                      displayValue={`${Math.round(layer.transform.rotation)}°`}
+                      value={layer.transform.rotation}
+                      min={ROTATION_MIN}
+                      max={ROTATION_MAX}
+                      step={1}
+                      buttonStep={15}
+                      defaultValue={0}
+                      resetLabel={t('reset')}
+                      onChange={(next) => handleRotationChange(layer.id, next)}
+                      theme={theme}
+                    />
+                    <LayerControlSlider
+                      label={t('opacity')}
+                      displayValue={`${opacityPercent}%`}
+                      value={opacityValue}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      buttonStep={0.1}
+                      defaultValue={1}
+                      resetLabel={t('reset')}
+                      onChange={(next) => handleOpacityChange(layer.id, next)}
+                      theme={theme}
+                    />
+                  </View>
+                )}
               </View>
-            }
-          />
-        </Animated.View>
+            );
+          }}
+          ListEmptyComponent={
+            <View style={{ padding: 40, alignItems: 'center' }}>
+              <MaterialCommunityIcons name='image-off' size={48} color={theme.textSecondary} />
+              <Text style={{ color: theme.textSecondary, fontSize: 16, marginTop: 12 }}>{t('noLayers')}</Text>
+              <Text style={{ color: theme.textSecondary, fontSize: 14, marginTop: 4, textAlign: 'center' }}>{t('addLayerHint')}</Text>
+            </View>
+          }
+        />
+      </Animated.View>
     </>
   );
 };
