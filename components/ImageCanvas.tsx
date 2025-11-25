@@ -33,6 +33,8 @@ type Props = {
   selectedLayerId: string | null;
   onSelectLayer: (layerId: string | null) => void;
   onBaseImageChange?: () => void;
+  onAddLayer?: () => void;
+  showAddLayerHint?: boolean;
 };
 
 export type ImageCanvasHandle = {
@@ -431,7 +433,7 @@ const LayerCapture = ({ layer, layerSize, baseImageSizeShared, baseDisplayBounds
 };
 
 const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
-  ({ baseImageUri, layers, onLayersChange, selectedLayerId, onSelectLayer, onBaseImageChange }: Props, ref) => {
+  ({ baseImageUri, layers, onLayersChange, selectedLayerId, onSelectLayer, onBaseImageChange, onAddLayer, showAddLayerHint }: Props, ref) => {
     // Base image transforms
     const baseScale = useSharedValue(1);
     const baseTranslateX = useSharedValue(0);
@@ -1240,6 +1242,30 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
             <MaterialCommunityIcons name='folder-image' size={22} color='white' />
           </Pressable>
         )}
+
+      {showAddLayerHint && onAddLayer && (
+        <Pressable
+          onPress={onAddLayer}
+          style={({ pressed }) => [
+            {
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: [{ translateX: -32 }, { translateY: -32 }, { scale: pressed ? 0.96 : 1 }],
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              backgroundColor: 'rgba(15, 23, 42, 0.6)',
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.4)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            },
+          ]}
+        >
+          <Text style={{ color: 'white', fontSize: 36, lineHeight: 36 }}>＋</Text>
+        </Pressable>
+      )}
 
         {/* Scale controls */}
         <View

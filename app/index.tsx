@@ -166,6 +166,8 @@ const Index = () => {
               selectedLayerId={selectedLayerId}
               onSelectLayer={setSelectedLayerId}
               onBaseImageChange={pickBaseImage}
+              onAddLayer={pickLayerImage}
+              showAddLayerHint={layers.length === 0}
             />
           ) : (
             <PickingPlaceholder picking={picking} onPick={pickBaseImage} />
