@@ -31,8 +31,8 @@ const Settings = () => {
 
   const handleFeedback = () => {
     const email = 'mobileemailap@gmail.com';
-    const subject = 'Photo Layer - Feedback';
-    const body = 'Hi,\n\nI would like to share my feedback about Photo Layer app:\n\n';
+    const subject = 'Layers - Feedback';
+    const body = 'Hi,\n\nI would like to share my feedback about Layers app:\n\n';
 
     const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 

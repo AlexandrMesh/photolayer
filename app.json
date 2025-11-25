@@ -9,8 +9,8 @@
       "fallbackToCacheTimeout": 0,
       "url": "https://u.expo.dev/12c23344-62c1-4bdc-a72c-0ebc9b944fd8"
     },
-    "name": "Photo Layer",
-    "slug": "photolayer",
+    "name": "Layers",
+    "slug": "layers",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

@@ -1,5 +1,5 @@
 export default {
-  appName: 'Photo Layer',
+  appName: 'Layers',
   basePhoto: 'Base photo',
   addBasePhoto: 'Add base photo',
   replaceBasePhoto: 'Replace base photo',
