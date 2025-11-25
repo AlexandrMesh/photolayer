@@ -174,9 +174,21 @@ type LayerDisplayProps = {
   gesture?: ReturnType<typeof Gesture.Simultaneous>;
   rotationGesture?: ReturnType<typeof Gesture.Pan>;
   resizeGesture?: ReturnType<typeof Gesture.Pan>;
+  rotationActive?: boolean;
+  resizeActive?: boolean;
 };
 
-const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture, rotationGesture, resizeGesture }: LayerDisplayProps) => {
+const LayerDisplay = ({
+  layer,
+  layerSize,
+  selected,
+  baseDisplayBounds,
+  gesture,
+  rotationGesture,
+  resizeGesture,
+  rotationActive,
+  resizeActive,
+}: LayerDisplayProps) => {
   const layerOpacity = typeof layer.transform.opacity === 'number' ? layer.transform.opacity : 1;
   const layerImageStyle: ImageStyle = { width: '100%', height: '100%', opacity: layerOpacity };
 
@@ -283,9 +295,9 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture, 
                 width: 28,
                 height: 28,
                 borderRadius: 14,
-                backgroundColor: 'rgba(0,0,0,0.6)',
-                borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.85)',
+                backgroundColor: rotationActive ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.6)',
+                borderWidth: rotationActive ? 2 : 1,
+                borderColor: rotationActive ? '#4ADE80' : 'rgba(255,255,255,0.85)',
                 alignItems: 'center',
                 justifyContent: 'center',
                 shadowColor: '#000',
@@ -318,15 +330,15 @@ const LayerDisplay = ({ layer, layerSize, selected, baseDisplayBounds, gesture, 
               right: -8,
               width: 22,
               height: 22,
-              backgroundColor: 'rgba(0,0,0,0.85)',
+              backgroundColor: resizeActive ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0.85)',
               borderRadius: 4,
               borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.35)',
+              borderColor: resizeActive ? '#fff' : 'rgba(255,255,255,0.35)',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>⇲</Text>
+            <MaterialCommunityIcons name='arrow-expand' size={14} color='white' style={{ transform: [{ rotate: '180deg' }] }} />
           </View>
         </GestureDetector>
       )}
@@ -462,6 +474,8 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
     const [layerSizes, setLayerSizes] = useState<Record<string, LayerSize>>({});
     const [scalePercent, setScalePercent] = useState(100);
+    const [activeRotationLayerId, setActiveRotationLayerId] = useState<string | null>(null);
+    const [activeResizeLayerId, setActiveResizeLayerId] = useState<string | null>(null);
     const isAdjustingRef = useRef(false);
     const captureViewShotRef = useRef<ViewShot | null>(null);
 
@@ -934,6 +948,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
           centerX: center.x,
           centerY: center.y,
         };
+        setActiveRotationLayerId(layerId);
       },
       [computeLayerCenterOnScreen],
     );
@@ -963,6 +978,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
 
     const handleRotationEnd = useCallback((layerId: string) => {
       delete rotationGestureState.current[layerId];
+      setActiveRotationLayerId((prev) => (prev === layerId ? null : prev));
     }, []);
 
     const handleResizeStart = useCallback(
@@ -977,6 +993,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
           centerX: center.x,
           centerY: center.y,
         };
+        setActiveResizeLayerId(layerId);
       },
       [computeLayerCenterOnScreen],
     );
@@ -1000,6 +1017,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
 
     const handleResizeEnd = useCallback((layerId: string) => {
       delete resizeGestureState.current[layerId];
+      setActiveResizeLayerId((prev) => (prev === layerId ? null : prev));
     }, []);
 
     // Create layer tap gesture for selection
@@ -1155,6 +1173,8 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
                   gesture={layerGesture}
                   rotationGesture={layerRotation}
                   resizeGesture={layerResize}
+                  rotationActive={activeRotationLayerId === layer.id}
+                  resizeActive={activeResizeLayerId === layer.id}
                 />
               );
             })}
