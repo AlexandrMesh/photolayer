@@ -50,6 +50,7 @@ type Props = {
   onSelectLayer: (layerId: string | null) => void;
   onBaseImageChange?: () => void;
   onAddLayer?: () => void;
+  onRemoveLayer?: (layerId: string) => void;
   showAddLayerHint?: boolean;
 };
 
@@ -192,6 +193,7 @@ type LayerDisplayProps = {
   resizeGesture?: ReturnType<typeof Gesture.Pan>;
   rotationActive?: boolean;
   resizeActive?: boolean;
+  onRemoveLayer?: (layerId: string) => void;
 };
 
 const LayerDisplay = ({
@@ -204,6 +206,7 @@ const LayerDisplay = ({
   resizeGesture,
   rotationActive,
   resizeActive,
+  onRemoveLayer,
 }: LayerDisplayProps) => {
   const layerOpacity = typeof layer.transform.opacity === 'number' ? layer.transform.opacity : 1;
   const layerImageStyle: ImageStyle = { width: '100%', height: '100%', opacity: layerOpacity };
@@ -359,6 +362,33 @@ const LayerDisplay = ({
           </View>
         </GestureDetector>
       )}
+      {selected && onRemoveLayer && (
+        <Pressable
+          onPress={() => onRemoveLayer(layer.id)}
+          style={({ pressed }) => [
+            {
+              position: 'absolute',
+              top: -8,
+              right: -8,
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              backgroundColor: pressed ? 'rgba(255,59,48,0.95)' : 'rgba(255,59,48,0.9)',
+              borderWidth: 2,
+              borderColor: '#fff',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: '#000',
+              shadowOpacity: 0.3,
+              shadowRadius: 4,
+              shadowOffset: { width: 0, height: 2 },
+              opacity: pressed ? 0.9 : 1,
+            },
+          ]}
+        >
+          <MaterialCommunityIcons name='delete' size={16} color='white' />
+        </Pressable>
+      )}
     </Animated.View>
   );
 };
@@ -462,7 +492,10 @@ const LayerCapture = ({ layer, layerSize, baseImageSizeShared, baseDisplayBounds
 };
 
 const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
-  ({ baseImageUri, layers, onLayersChange, selectedLayerId, onSelectLayer, onBaseImageChange, onAddLayer, showAddLayerHint }: Props, ref) => {
+  (
+    { baseImageUri, layers, onLayersChange, selectedLayerId, onSelectLayer, onBaseImageChange, onAddLayer, onRemoveLayer, showAddLayerHint }: Props,
+    ref,
+  ) => {
     // Base image transforms
     const baseScale = useSharedValue(1);
     const baseTranslateX = useSharedValue(0);
@@ -1194,6 +1227,7 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
                   resizeGesture={layerResize}
                   rotationActive={activeRotationLayerId === layer.id}
                   resizeActive={activeResizeLayerId === layer.id}
+                  onRemoveLayer={onRemoveLayer}
                 />
               );
             })}

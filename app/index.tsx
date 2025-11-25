@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { useRouter } from 'expo-router';
@@ -169,6 +168,7 @@ const Index = () => {
               onSelectLayer={setSelectedLayerId}
               onBaseImageChange={pickBaseImage}
               onAddLayer={pickLayerImage}
+              onRemoveLayer={handleRemoveLayer}
               showAddLayerHint={layers.length === 0}
             />
           ) : (
