@@ -51,4 +51,6 @@ export default {
   opacity: 'Прозрачность',
   size: 'Размер',
   angle: 'Угол',
+  permissionDenied: 'Доступ запрещен',
+  permissionDeniedMessage: 'Разрешите доступ для сохранения изображений в галерею',
 };
