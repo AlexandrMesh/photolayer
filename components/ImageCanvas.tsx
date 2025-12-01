@@ -1189,7 +1189,34 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
 
     useImperativeHandle(ref, () => ({
       capture: async () => {
-        return await captureViewShotRef.current?.capture?.();
+        console.log('[CAPTURE] Starting capture...');
+        const width = baseImageSizeShared.value.width;
+        const height = baseImageSizeShared.value.height;
+        console.log('[CAPTURE] Base image size:', { width, height });
+        console.log('[CAPTURE] captureViewShotRef.current:', !!captureViewShotRef.current);
+
+        if (!width || !height) {
+          console.error('[CAPTURE] No base image size!');
+          throw new Error('No base image size');
+        }
+
+        const options = {
+          format: 'png' as const,
+          quality: 1,
+          result: 'tmpfile' as const,
+          width: Math.round(width),
+          height: Math.round(height),
+        };
+        console.log('[CAPTURE] Options:', options);
+
+        try {
+          const result = await captureViewShotRef.current?.capture?.(options);
+          console.log('[CAPTURE] Result:', result);
+          return result;
+        } catch (captureError) {
+          console.error('[CAPTURE] ViewShot capture error:', captureError);
+          throw captureError;
+        }
       },
     }));
 
@@ -1248,12 +1275,14 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
           <View
             style={{
               position: 'absolute',
-              left: -100000,
-              top: -100000,
+              left: 0,
+              top: 0,
               opacity: 0,
               pointerEvents: 'none',
+              zIndex: -1,
               width: baseImageSize.width,
               height: baseImageSize.height,
+              overflow: 'hidden',
             }}
           >
             <ViewShot

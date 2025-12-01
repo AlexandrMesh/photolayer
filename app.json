@@ -6,7 +6,8 @@
     "updates": {
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/ed7d240a-05a8-4335-8e05-0ddcc6580386"
     },
     "name": "Layers",
     "slug": "layers",

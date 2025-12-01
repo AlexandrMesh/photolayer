@@ -118,12 +118,27 @@ const Index = () => {
     if (!baseImageUri || saving) return;
     try {
       setSaving(true);
+      console.log('[SAVE] Starting save process...');
+      console.log('[SAVE] baseImageUri:', baseImageUri);
+
+      console.log('[SAVE] Requesting MediaLibrary permissions...');
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      console.log('[SAVE] Permission status:', status);
+      if (status !== 'granted') {
+        throw new Error('permission_denied');
+      }
+
+      console.log('[SAVE] Capturing image...');
+      console.log('[SAVE] imageCanvasRef.current:', !!imageCanvasRef.current);
       const uri = await imageCanvasRef.current?.capture();
+      console.log('[SAVE] Captured URI:', uri);
       if (!uri) {
         throw new Error('capture_failed');
       }
 
+      console.log('[SAVE] Saving to library...');
       await MediaLibrary.saveToLibraryAsync(uri);
+      console.log('[SAVE] Success!');
       Toast.show({
         type: 'success',
         text1: t('saved'),
@@ -131,11 +146,15 @@ const Index = () => {
         position: 'top',
         visibilityTime: 3000,
       });
-    } catch {
+    } catch (error) {
+      console.error('[SAVE] Error:', error);
+      console.error('[SAVE] Error name:', error instanceof Error ? error.name : 'unknown');
+      console.error('[SAVE] Error message:', error instanceof Error ? error.message : String(error));
+      console.error('[SAVE] Error stack:', error instanceof Error ? error.stack : 'no stack');
       Toast.show({
         type: 'error',
         text1: 'Error',
-        text2: 'Failed to save image',
+        text2: error instanceof Error ? error.message : 'Failed to save image',
         position: 'top',
         visibilityTime: 3000,
       });
