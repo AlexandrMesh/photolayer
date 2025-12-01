@@ -6,8 +6,7 @@
     "updates": {
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0,
-      "url": "https://u.expo.dev/12c23344-62c1-4bdc-a72c-0ebc9b944fd8"
+      "fallbackToCacheTimeout": 0
     },
     "name": "Layers",
     "slug": "layers",
@@ -59,7 +58,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "12c23344-62c1-4bdc-a72c-0ebc9b944fd8"
+        "projectId": "ed7d240a-05a8-4335-8e05-0ddcc6580386"
       }
     }
   }
