@@ -49,6 +49,15 @@
             "backgroundColor": "#09172a"
           }
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos.",
+          "savePhotosPermission": "Allow $(PRODUCT_NAME) to save photos.",
+          "isAccessMediaLocationEnabled": true,
+          "legacyMediaLibrary": false
+        }
       ]
     ],
     "experiments": {

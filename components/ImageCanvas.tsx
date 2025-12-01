@@ -1,11 +1,12 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 import { Image, Pressable, Text, View, type ImageStyle, type LayoutChangeEvent } from 'react-native';
 
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Skia } from '@shopify/react-native-skia';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import ViewShot from 'react-native-view-shot';
 
 import type { SharedValue } from 'react-native-reanimated';
 
@@ -393,104 +394,6 @@ const LayerDisplay = ({
   );
 };
 
-type LayerCaptureProps = {
-  layer: Layer;
-  layerSize?: LayerSize;
-  baseImageSizeShared: SharedValue<LayerSize>;
-  baseDisplayBounds: SharedValue<Bounds>;
-};
-
-const LayerCapture = ({ layer, layerSize, baseImageSizeShared, baseDisplayBounds }: LayerCaptureProps) => {
-  const layerOpacity = typeof layer.transform.opacity === 'number' ? layer.transform.opacity : 1;
-  // Compute style synchronously using useMemo for ViewShot compatibility
-  const style = useMemo(() => {
-    // Read values from shared values synchronously
-    const bounds = baseDisplayBounds.value;
-    const baseSize = baseImageSizeShared.value;
-
-    if (!bounds.width || !bounds.height || !baseSize.width || !baseSize.height || !layerSize?.width || !layerSize?.height) {
-      return null;
-    }
-
-    // In ViewShot, container is baseSize.width x baseSize.height
-    // Base image uses resizeMode='contain', so we need to calculate actual image bounds
-    const containerWidth = baseSize.width;
-    const containerHeight = baseSize.height;
-    const containerRatio = containerWidth / containerHeight;
-    const imageRatio = baseSize.width / baseSize.height;
-
-    // Calculate actual base image bounds in ViewShot (with contain mode)
-    let imageWidth = containerWidth;
-    let imageHeight = containerHeight;
-    let imageX = 0;
-    let imageY = 0;
-    if (imageRatio > containerRatio) {
-      imageWidth = containerWidth;
-      imageHeight = imageWidth / imageRatio;
-      imageY = (containerHeight - imageHeight) / 2;
-    } else {
-      imageHeight = containerHeight;
-      imageWidth = imageHeight * imageRatio;
-      imageX = (containerWidth - imageWidth) / 2;
-    }
-
-    // Scale factor from display bounds (on screen) to ViewShot image bounds
-    const scaleX = imageWidth / bounds.width;
-    const scaleY = imageHeight / bounds.height;
-
-    // Calculate layer size at base image scale 1 (in display bounds coordinates)
-    const maxWidthAtBaseScale1 = bounds.width * 0.6;
-    const maxHeightAtBaseScale1 = bounds.height * 0.6;
-    const aspect = layerSize.width / layerSize.height;
-    let layerWidthAtBaseScale1 = maxWidthAtBaseScale1;
-    let layerHeightAtBaseScale1 = layerWidthAtBaseScale1 / aspect;
-    if (layerHeightAtBaseScale1 > maxHeightAtBaseScale1) {
-      layerHeightAtBaseScale1 = maxHeightAtBaseScale1;
-      layerWidthAtBaseScale1 = layerHeightAtBaseScale1 * aspect;
-    }
-
-    // Layer size at scale 1 (in display bounds coordinates)
-    const layerWidth = layerWidthAtBaseScale1 * layer.transform.scale;
-    const layerHeight = layerHeightAtBaseScale1 * layer.transform.scale;
-
-    // Layer position: stored as offset from base center in display bounds coordinates
-    const offsetX = layer.transform.x;
-    const offsetY = layer.transform.y;
-
-    // Base center in ViewShot image coordinates
-    const baseCenterX = imageX + imageWidth / 2;
-    const baseCenterY = imageY + imageHeight / 2;
-
-    // Convert layer position from display bounds to ViewShot image coordinates
-    const layerOffsetXInBase = offsetX * scaleX;
-    const layerOffsetYInBase = offsetY * scaleY;
-
-    // Final position: base center + scaled layer offset
-    const left = baseCenterX + layerOffsetXInBase - (layerWidth * scaleX) / 2;
-    const top = baseCenterY + layerOffsetYInBase - (layerHeight * scaleY) / 2;
-
-    return {
-      position: 'absolute' as const,
-      left,
-      top,
-      width: layerWidth * scaleX,
-      height: layerHeight * scaleY,
-      transform: [{ rotate: `${layer.transform.rotation}deg` }],
-      opacity: layerOpacity,
-    };
-  }, [layer, layerSize, baseImageSizeShared, baseDisplayBounds, layerOpacity]);
-
-  if (!style || !layerSize?.width || !layerSize?.height) {
-    return null;
-  }
-
-  return (
-    <View style={style}>
-      <Image source={{ uri: layer.uri }} style={{ width: '100%', height: '100%' }} resizeMode='contain' />
-    </View>
-  );
-};
-
 const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
   (
     { baseImageUri, layers, onLayersChange, selectedLayerId, onSelectLayer, onBaseImageChange, onAddLayer, onRemoveLayer, showAddLayerHint }: Props,
@@ -527,7 +430,6 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
     const [activeRotationLayerId, setActiveRotationLayerId] = useState<string | null>(null);
     const [activeResizeLayerId, setActiveResizeLayerId] = useState<string | null>(null);
     const isAdjustingRef = useRef(false);
-    const captureViewShotRef = useRef<ViewShot | null>(null);
 
     // Get base image size
     useEffect(() => {
@@ -1187,35 +1089,106 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
       [handleResizeEnd, handleResizeStart, handleResizeUpdate, onSelectLayer],
     );
 
+    // Load image as Skia image from URI
+    const loadSkiaImage = useCallback(async (uri: string) => {
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      const data = Skia.Data.fromBase64(base64);
+      const image = Skia.Image.MakeImageFromEncoded(data);
+      if (!image) {
+        throw new Error(`Failed to load image: ${uri}`);
+      }
+      return image;
+    }, []);
+
     useImperativeHandle(ref, () => ({
       capture: async () => {
-        console.log('[CAPTURE] Starting capture...');
-        const width = baseImageSizeShared.value.width;
-        const height = baseImageSizeShared.value.height;
-        console.log('[CAPTURE] Base image size:', { width, height });
-        console.log('[CAPTURE] captureViewShotRef.current:', !!captureViewShotRef.current);
+        const width = Math.round(baseImageSizeShared.value.width);
+        const height = Math.round(baseImageSizeShared.value.height);
+        const bounds = baseDisplayBounds.value;
 
         if (!width || !height) {
-          console.error('[CAPTURE] No base image size!');
           throw new Error('No base image size');
         }
 
-        const options = {
-          format: 'png' as const,
-          quality: 1,
-          result: 'tmpfile' as const,
-          width: Math.round(width),
-          height: Math.round(height),
-        };
-        console.log('[CAPTURE] Options:', options);
-
         try {
-          const result = await captureViewShotRef.current?.capture?.(options);
-          console.log('[CAPTURE] Result:', result);
-          return result;
-        } catch (captureError) {
-          console.error('[CAPTURE] ViewShot capture error:', captureError);
-          throw captureError;
+          // Create Skia surface
+          const surface = Skia.Surface.Make(width, height);
+          if (!surface) {
+            throw new Error('Failed to create Skia surface');
+          }
+          const canvas = surface.getCanvas();
+
+          // Fill with black background
+          canvas.clear(Skia.Color('#000000'));
+
+          // Load and draw base image
+          const baseImage = await loadSkiaImage(baseImageUri);
+          const basePaint = Skia.Paint();
+          const baseSrcRect = Skia.XYWHRect(0, 0, baseImage.width(), baseImage.height());
+          const baseDestRect = Skia.XYWHRect(0, 0, width, height);
+          canvas.drawImageRect(baseImage, baseSrcRect, baseDestRect, basePaint);
+
+          // Draw each layer
+          for (const layer of layers) {
+            const layerSize = layerSizes[layer.id];
+            if (!layerSize?.width || !layerSize?.height) continue;
+
+            // Load layer image
+            const layerImage = await loadSkiaImage(layer.uri);
+
+            // Calculate layer position (same logic as LayerCapture)
+            const scaleX = width / bounds.width;
+            const scaleY = height / bounds.height;
+
+            const maxWidthAtBaseScale1 = bounds.width * 0.6;
+            const maxHeightAtBaseScale1 = bounds.height * 0.6;
+            const aspect = layerSize.width / layerSize.height;
+            let layerWidthAtBaseScale1 = maxWidthAtBaseScale1;
+            let layerHeightAtBaseScale1 = layerWidthAtBaseScale1 / aspect;
+            if (layerHeightAtBaseScale1 > maxHeightAtBaseScale1) {
+              layerHeightAtBaseScale1 = maxHeightAtBaseScale1;
+              layerWidthAtBaseScale1 = layerHeightAtBaseScale1 * aspect;
+            }
+
+            const layerDisplayWidth = layerWidthAtBaseScale1 * layer.transform.scale;
+            const layerDisplayHeight = layerHeightAtBaseScale1 * layer.transform.scale;
+
+            // Layer position in output image coordinates
+            const layerWidth = layerDisplayWidth * scaleX;
+            const layerHeight = layerDisplayHeight * scaleY;
+            const centerX = width / 2 + layer.transform.x * scaleX;
+            const centerY = height / 2 + layer.transform.y * scaleY;
+            const left = centerX - layerWidth / 2;
+            const top = centerY - layerHeight / 2;
+
+            // Create paint with opacity
+            const paint = Skia.Paint();
+            paint.setAlphaf(layer.transform.opacity ?? 1);
+
+            // Apply rotation around center
+            canvas.save();
+            canvas.rotate(layer.transform.rotation, centerX, centerY);
+
+            // Draw layer
+            const srcRect = Skia.XYWHRect(0, 0, layerImage.width(), layerImage.height());
+            const dstRect = Skia.XYWHRect(left, top, layerWidth, layerHeight);
+            canvas.drawImageRect(layerImage, srcRect, dstRect, paint);
+
+            canvas.restore();
+          }
+
+          // Export to PNG
+          const snapshot = surface.makeImageSnapshot();
+          const pngData = snapshot.encodeToBase64();
+
+          // Save to temp file
+          const tempPath = `${FileSystem.cacheDirectory}capture_${Date.now()}.png`;
+          await FileSystem.writeAsStringAsync(tempPath, pngData, { encoding: FileSystem.EncodingType.Base64 });
+
+          return tempPath;
+        } catch (error) {
+          console.error('[CAPTURE] Skia capture error:', error);
+          throw error;
         }
       },
     }));
@@ -1269,51 +1242,6 @@ const ImageCanvas = forwardRef<ImageCanvasHandle, Props>(
             })}
           </Animated.View>
         </GestureDetector>
-
-        {/* Hidden ViewShot for capture */}
-        {baseImageSize.width > 0 && baseImageSize.height > 0 && (
-          <View
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              opacity: 0,
-              pointerEvents: 'none',
-              zIndex: -1,
-              width: baseImageSize.width,
-              height: baseImageSize.height,
-              overflow: 'hidden',
-            }}
-          >
-            <ViewShot
-              ref={captureViewShotRef}
-              options={{
-                format: 'png',
-                quality: 1,
-                result: 'tmpfile',
-                width: Math.round(baseImageSize.width),
-                height: Math.round(baseImageSize.height),
-              }}
-              style={{ width: baseImageSize.width, height: baseImageSize.height }}
-            >
-              <View style={{ width: baseImageSize.width, height: baseImageSize.height }}>
-                <Image source={{ uri: baseImageUri }} style={{ width: baseImageSize.width, height: baseImageSize.height }} resizeMode='contain' />
-                {layers.map((layer) => {
-                  const layerSize = layerSizes[layer.id];
-                  return (
-                    <LayerCapture
-                      key={layer.id}
-                      layer={layer}
-                      layerSize={layerSize}
-                      baseImageSizeShared={baseImageSizeShared}
-                      baseDisplayBounds={baseDisplayBounds}
-                    />
-                  );
-                })}
-              </View>
-            </ViewShot>
-          </View>
-        )}
 
         {/* Base image change button */}
         {onBaseImageChange && (
