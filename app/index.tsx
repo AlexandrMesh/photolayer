@@ -32,8 +32,8 @@ const Index = () => {
 
   useEffect(() => {
     (async () => {
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-      await MediaLibrary.requestPermissionsAsync();
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') return;
     })();
   }, []);
 
@@ -118,19 +118,6 @@ const Index = () => {
     if (!baseImageUri || saving) return;
     try {
       setSaving(true);
-
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Toast.show({
-          type: 'error',
-          text1: t('permissionDenied'),
-          text2: t('permissionDeniedMessage'),
-          position: 'top',
-          visibilityTime: 3000,
-        });
-        return;
-      }
-
       const uri = await imageCanvasRef.current?.capture();
       if (!uri) {
         throw new Error('capture_failed');

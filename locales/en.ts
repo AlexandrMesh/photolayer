@@ -51,6 +51,4 @@ export default {
   opacity: 'Opacity',
   size: 'Size',
   angle: 'Angle',
-  permissionDenied: 'Permission denied',
-  permissionDeniedMessage: 'Please allow access to save images to gallery',
 };
