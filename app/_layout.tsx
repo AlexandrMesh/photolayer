@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
+
 import { View } from 'react-native';
+
+import Constants from 'expo-constants';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import Constants from 'expo-constants';
 import BannerAd from '../components/BannerAd';
 import { I18nProvider } from '../contexts/I18nContext';
 import { ThemeProvider } from '../contexts/ThemeContext';
