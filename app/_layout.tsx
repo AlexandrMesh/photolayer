@@ -17,9 +17,12 @@ const RootLayout = () => {
   useEffect(() => {
     const isExpoGo = Constants.appOwnership === 'expo';
     if (!isExpoGo) {
-      import('yandex-mobile-ads')
-        .then(({ MobileAds }) => MobileAds.initialize())
-        .catch((error) => console.warn('Yandex Mobile Ads not available:', error));
+      try {
+        const { MobileAds } = require('yandex-mobile-ads');
+        MobileAds.initialize();
+      } catch (error) {
+        console.warn('Yandex Mobile Ads not available:', error);
+      }
     }
   }, []);
 

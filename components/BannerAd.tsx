@@ -31,7 +31,7 @@ const BannerAd: React.FC = () => {
     if (!isExpoGo && isConnected) {
       (async () => {
         try {
-          const { AdRequest, AdTheme, BannerAdSize, BannerView, Gender, Location } = await import('yandex-mobile-ads');
+          const { AdRequest, AdTheme, BannerAdSize, BannerView, Gender, Location } = require('yandex-mobile-ads');
 
           const request = new AdRequest({
             age: '20',
