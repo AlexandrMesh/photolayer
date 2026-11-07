@@ -2,6 +2,13 @@
 
 ## photolayer / Layers
 
+## 1.0.3
+
+###### 2026-11-07
+
+- [Fix] Play Photo/Video policy: block `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` (+ related storage); system photo picker for pick; write-only gallery save
+- [Note] Native EAS rebuild required (manifest permissions)
+
 ## 1.0.2
 
 ###### 2026-11-07

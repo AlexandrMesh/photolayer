@@ -4,7 +4,6 @@ import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as MediaLibrary from 'expo-media-library';
 import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,6 +17,7 @@ import ReviewPrompt from '../components/ReviewPrompt';
 import { useI18n } from '../contexts/I18nContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { checkAndMaybeUpdate } from '../utils/inAppUpdate';
+import { saveToGallery } from '../utils/saveToGallery';
 
 const Index = () => {
   const [baseImageUri, setBaseImageUri] = useState<string | null>(null);
@@ -33,14 +33,6 @@ const Index = () => {
   const router = useRouter();
 
   useEffect(() => {
-    (async () => {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') return;
-    })();
-  }, []);
-
-  useEffect(() => {
-    // non-blocking check for Android in-app updates
     checkAndMaybeUpdate({ flexible: true }).catch(() => {});
   }, []);
 
@@ -142,10 +134,6 @@ const Index = () => {
   );
 
   const captureComposition = async (): Promise<string> => {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status !== 'granted') {
-      throw new Error('permission_denied');
-    }
     const uri = await imageCanvasRef.current?.capture();
     if (!uri) {
       throw new Error('capture_failed');
@@ -158,7 +146,7 @@ const Index = () => {
     try {
       setSaving(true);
       const uri = await captureComposition();
-      await MediaLibrary.saveToLibraryAsync(uri);
+      await saveToGallery(uri);
       Toast.show({
         type: 'success',
         text1: t('saved'),
