@@ -4,7 +4,7 @@ import * as Updates from 'expo-updates';
 
 type CheckUpdateOptions = { flexible?: boolean };
 
-const ANDROID_PACKAGE = 'com.photolayer';
+const ANDROID_PACKAGE = 'com.layers_photo_editor';
 
 const openStorePage = async (): Promise<boolean> => {
   try {

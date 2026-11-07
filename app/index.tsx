@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { useRouter } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 
@@ -23,6 +24,7 @@ const Index = () => {
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
+  const [sharing, setSharing] = useState<boolean>(false);
   const [picking, setPicking] = useState<boolean>(false);
   const [layersSheetVisible, setLayersSheetVisible] = useState(false);
   const imageCanvasRef = useRef<ImageCanvasHandle | null>(null);
@@ -114,31 +116,49 @@ const Index = () => {
     [selectedLayerId],
   );
 
+  const handleDuplicateLayer = useCallback(
+    (layerId: string) => {
+      const source = layers.find((layer) => layer.id === layerId);
+      if (!source) return;
+      const copy: Layer = {
+        id: `layer-${Date.now()}-${Math.random()}`,
+        uri: source.uri,
+        transform: {
+          ...source.transform,
+          x: source.transform.x + 24,
+          y: source.transform.y + 24,
+        },
+      };
+      setLayers((prev) => [...prev, copy]);
+      setSelectedLayerId(copy.id);
+      Toast.show({
+        type: 'success',
+        text1: t('layerDuplicated'),
+        position: 'top',
+        visibilityTime: 1800,
+      });
+    },
+    [layers, t],
+  );
+
+  const captureComposition = async (): Promise<string> => {
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    if (status !== 'granted') {
+      throw new Error('permission_denied');
+    }
+    const uri = await imageCanvasRef.current?.capture();
+    if (!uri) {
+      throw new Error('capture_failed');
+    }
+    return uri;
+  };
+
   const saveImage = async () => {
-    if (!baseImageUri || saving) return;
+    if (!baseImageUri || saving || sharing) return;
     try {
       setSaving(true);
-      console.log('[SAVE] Starting save process...');
-      console.log('[SAVE] baseImageUri:', baseImageUri);
-
-      console.log('[SAVE] Requesting MediaLibrary permissions...');
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      console.log('[SAVE] Permission status:', status);
-      if (status !== 'granted') {
-        throw new Error('permission_denied');
-      }
-
-      console.log('[SAVE] Capturing image...');
-      console.log('[SAVE] imageCanvasRef.current:', !!imageCanvasRef.current);
-      const uri = await imageCanvasRef.current?.capture();
-      console.log('[SAVE] Captured URI:', uri);
-      if (!uri) {
-        throw new Error('capture_failed');
-      }
-
-      console.log('[SAVE] Saving to library...');
+      const uri = await captureComposition();
       await MediaLibrary.saveToLibraryAsync(uri);
-      console.log('[SAVE] Success!');
       Toast.show({
         type: 'success',
         text1: t('saved'),
@@ -147,10 +167,6 @@ const Index = () => {
         visibilityTime: 3000,
       });
     } catch (error) {
-      console.error('[SAVE] Error:', error);
-      console.error('[SAVE] Error name:', error instanceof Error ? error.name : 'unknown');
-      console.error('[SAVE] Error message:', error instanceof Error ? error.message : String(error));
-      console.error('[SAVE] Error stack:', error instanceof Error ? error.stack : 'no stack');
       Toast.show({
         type: 'error',
         text1: 'Error',
@@ -163,8 +179,31 @@ const Index = () => {
     }
   };
 
+  const shareImage = async () => {
+    if (!baseImageUri || saving || sharing) return;
+    try {
+      setSharing(true);
+      const available = await Sharing.isAvailableAsync();
+      if (!available) {
+        throw new Error(t('shareFailed'));
+      }
+      const uri = await captureComposition();
+      await Sharing.shareAsync(uri, { mimeType: 'image/png', UTI: 'public.png' });
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: t('shareFailed'),
+        text2: error instanceof Error ? error.message : undefined,
+        position: 'top',
+        visibilityTime: 3000,
+      });
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background, position: 'relative' }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.background, position: 'relative' }}>
       <Header onSettingsPress={() => router.push('/settings')} />
       <View style={{ flex: 1, padding: 16, paddingTop: 4, gap: 12 }}>
         <View
@@ -196,13 +235,12 @@ const Index = () => {
         </View>
 
         {baseImageUri && (
-          <View style={{ flexDirection: 'row', gap: 12 }}>
+          <View style={{ gap: 10 }}>
             <Pressable
               onPress={() => setLayersSheetVisible(true)}
               style={({ pressed }) => [
                 {
-                  flex: 1,
-                  paddingVertical: 16,
+                  paddingVertical: 14,
                   paddingHorizontal: 20,
                   borderRadius: 12,
                   backgroundColor: theme.primary,
@@ -217,27 +255,56 @@ const Index = () => {
                 <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{t('layers')}</Text>
               </View>
             </Pressable>
-            <Pressable
-              onPress={saveImage}
-              disabled={saving}
-              style={({ pressed }) => [
-                {
-                  flex: 1,
-                  paddingVertical: 16,
-                  paddingHorizontal: 20,
-                  borderRadius: 12,
-                  backgroundColor: saving ? 'rgba(34,197,94,0.5)' : '#34C759',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: pressed ? 0.85 : 1,
-                },
-              ]}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <MaterialCommunityIcons name='content-save-outline' size={20} color='white' />
-                <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{saving ? t('saving') : t('save')}</Text>
-              </View>
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Pressable
+                onPress={shareImage}
+                disabled={saving || sharing}
+                style={({ pressed }) => [
+                  {
+                    flex: 1,
+                    paddingVertical: 16,
+                    paddingHorizontal: 16,
+                    borderRadius: 12,
+                    borderWidth: 2,
+                    borderColor: theme.primary,
+                    backgroundColor: theme.surface,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: saving || sharing ? 0.5 : pressed ? 0.85 : 1,
+                  },
+                ]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <MaterialCommunityIcons name='share-variant-outline' size={20} color={theme.primary} />
+                  <Text style={{ color: theme.primary, fontSize: 16, fontWeight: '600' }}>
+                    {sharing ? t('sharing') : t('share')}
+                  </Text>
+                </View>
+              </Pressable>
+              <Pressable
+                onPress={saveImage}
+                disabled={saving || sharing}
+                style={({ pressed }) => [
+                  {
+                    flex: 1,
+                    paddingVertical: 16,
+                    paddingHorizontal: 16,
+                    borderRadius: 12,
+                    backgroundColor: saving ? 'rgba(34,197,94,0.5)' : '#34C759',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: pressed ? 0.85 : 1,
+                  },
+                ]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <MaterialCommunityIcons name='content-save-outline' size={20} color='white' />
+                  <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>
+                    {saving ? t('saving') : t('save')}
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
           </View>
         )}
       </View>
@@ -273,7 +340,7 @@ const Index = () => {
         </View>
       )}
 
-      {saving && (
+      {(saving || sharing) && (
         <View
           pointerEvents='auto'
           style={{
@@ -299,7 +366,9 @@ const Index = () => {
             }}
           >
             <ActivityIndicator size='large' color={theme.primary} />
-            <Text style={{ color: theme.text, fontSize: 16, fontWeight: '500' }}>{t('saving')}</Text>
+            <Text style={{ color: theme.text, fontSize: 16, fontWeight: '500' }}>
+              {sharing ? t('sharing') : t('saving')}
+            </Text>
           </View>
         </View>
       )}
@@ -310,6 +379,7 @@ const Index = () => {
         selectedLayerId={selectedLayerId}
         onSelectLayer={setSelectedLayerId}
         onRemoveLayer={handleRemoveLayer}
+        onDuplicateLayer={handleDuplicateLayer}
         onUpdateLayerTransform={handleUpdateLayerTransform}
         onClose={() => setLayersSheetVisible(false)}
         onAddLayer={pickLayerImage}

@@ -7,23 +7,21 @@ import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import BannerAd from '../components/BannerAd';
-import { I18nProvider } from '../contexts/I18nContext';
-import { ThemeProvider } from '../contexts/ThemeContext';
+import { initAdsForNetwork } from '@/ads/initAds';
+import { resolveAdNetwork } from '@/ads/resolveAdNetwork';
+import BannerAd from '@/components/BannerAd';
+import { I18nProvider } from '@/contexts/I18nContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 
 const RootLayout = () => {
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
-    const isExpoGo = Constants.appOwnership === 'expo';
-    if (!isExpoGo) {
-      try {
-        const { MobileAds } = require('yandex-mobile-ads');
-        MobileAds.initialize();
-      } catch (error) {
-        console.warn('Yandex Mobile Ads not available:', error);
-      }
-    }
+    if (Constants.appOwnership === 'expo') return;
+    const t = setTimeout(() => {
+      initAdsForNetwork(resolveAdNetwork());
+    }, 400);
+    return () => clearTimeout(t);
   }, []);
 
   return (
@@ -32,8 +30,8 @@ const RootLayout = () => {
         <GestureHandlerRootView style={{ flex: 1 }}>
           <View style={{ flex: 1 }}>
             <Stack>
-              <Stack.Screen name='index' options={{ headerShown: false }} />
-              <Stack.Screen name='settings' options={{ headerShown: false }} />
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="settings" options={{ headerShown: false }} />
             </Stack>
           </View>
           <View style={{ paddingBottom: insets.bottom }}>

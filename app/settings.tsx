@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -27,7 +28,7 @@ const Settings = () => {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [checkResult, setCheckResult] = useState<string | null>(null);
 
-  const appVersion = '1.0.0'; // Из app.json
+  const appVersion = Constants.expoConfig?.version ?? '1.0.2';
 
   const handleFeedback = () => {
     const email = 'mobileemailap@gmail.com';

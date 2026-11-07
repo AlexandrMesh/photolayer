@@ -19,6 +19,7 @@ type Props = {
   selectedLayerId: string | null;
   onSelectLayer: (layerId: string | null) => void;
   onRemoveLayer: (layerId: string) => void;
+  onDuplicateLayer: (layerId: string) => void;
   onUpdateLayerTransform: (layerId: string, transform: Partial<LayerTransform>) => void;
   onClose: () => void;
   onAddLayer: () => void;
@@ -225,6 +226,7 @@ const LayersBottomSheet = ({
   selectedLayerId,
   onSelectLayer,
   onRemoveLayer,
+  onDuplicateLayer,
   onUpdateLayerTransform,
   onClose,
   onAddLayer,
@@ -247,13 +249,21 @@ const LayersBottomSheet = ({
     }
   }, [visible, translateY, opacity]);
 
+  const closeSheet = useCallback(() => {
+    translateY.value = withTiming(400, { duration: 250 });
+    opacity.value = withTiming(0, { duration: 200 });
+    setTimeout(() => {
+      onClose();
+    }, 250);
+  }, [translateY, opacity, onClose]);
+
   // Handle Android back button
   useEffect(() => {
     if (!visible) return;
 
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
       closeSheet();
-      return true; // Prevent default behavior
+      return true;
     });
 
     return () => backHandler.remove();
@@ -267,12 +277,11 @@ const LayersBottomSheet = ({
     const selectedIndex = reversedLayers.findIndex((layer) => layer.id === selectedLayerId);
 
     if (selectedIndex >= 0 && flatListRef.current) {
-      // Delay to ensure the sheet animation completes and is fully visible
       setTimeout(() => {
         flatListRef.current?.scrollToIndex({
           index: selectedIndex,
           animated: true,
-          viewPosition: 0.5, // Center the item in the viewport
+          viewPosition: 0.5,
         });
       }, 350);
     }
@@ -285,15 +294,6 @@ const LayersBottomSheet = ({
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
   }));
-
-  const closeSheet = useCallback(() => {
-    translateY.value = withTiming(400, { duration: 250 });
-    opacity.value = withTiming(0, { duration: 200 });
-    // Call onClose after animation completes
-    setTimeout(() => {
-      onClose();
-    }, 250);
-  }, [translateY, opacity, onClose]);
 
   const panGesture = Gesture.Pan()
     .activeOffsetY(10) // Only activate when dragging down
@@ -481,22 +481,41 @@ const LayersBottomSheet = ({
                   </Pressable>
 
                   {isSelected && (
-                    <Pressable
-                      onPress={() => onRemoveLayer(layer.id)}
-                      style={({ pressed }) => [
-                        {
-                          width: 36,
-                          height: 36,
-                          borderRadius: 18,
-                          backgroundColor: '#FF3B30',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          opacity: pressed ? 0.8 : 1,
-                        },
-                      ]}
-                    >
-                      <MaterialCommunityIcons name='delete' size={18} color='white' />
-                    </Pressable>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Pressable
+                        onPress={() => onDuplicateLayer(layer.id)}
+                        accessibilityLabel={t('duplicateLayer')}
+                        style={({ pressed }) => [
+                          {
+                            width: 36,
+                            height: 36,
+                            borderRadius: 18,
+                            backgroundColor: theme.primary,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            opacity: pressed ? 0.8 : 1,
+                          },
+                        ]}
+                      >
+                        <MaterialCommunityIcons name='content-copy' size={18} color='white' />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => onRemoveLayer(layer.id)}
+                        style={({ pressed }) => [
+                          {
+                            width: 36,
+                            height: 36,
+                            borderRadius: 18,
+                            backgroundColor: '#FF3B30',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            opacity: pressed ? 0.8 : 1,
+                          },
+                        ]}
+                      >
+                        <MaterialCommunityIcons name='delete' size={18} color='white' />
+                      </Pressable>
+                    </View>
                   )}
                 </View>
 

@@ -10,10 +10,12 @@
       "prebuildCommand": "expo prebuild --clean",
       "channel": "development",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "autoIncrement": true
       },
       "ios": {
-        "buildConfiguration": "Debug"
+        "buildConfiguration": "Debug",
+        "autoIncrement": true
       }
     },
     "preview": {
@@ -21,7 +23,13 @@
       "prebuildCommand": "expo prebuild --clean",
       "channel": "preview",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "autoIncrement": true
+      },
+      "ios": {
+        "buildConfiguration": "Release",
+        "simulator": true,
+        "autoIncrement": true
       }
     },
     "production": {
@@ -29,6 +37,10 @@
       "channel": "production",
       "android": {
         "buildType": "app-bundle",
+        "autoIncrement": true
+      },
+      "ios": {
+        "buildConfiguration": "Release",
         "autoIncrement": true
       }
     }
